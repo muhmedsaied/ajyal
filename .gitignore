@@ -20,6 +20,7 @@ terraform.rc
 **/.claude/
 *.claude
 .claude.json
+CLAUDE.md
 
 # IDE
 .idea/
