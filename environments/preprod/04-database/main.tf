@@ -35,6 +35,7 @@ provider "aws" {
       Environment = var.environment
       Project     = "Ajyal-LMS"
       ManagedBy   = "Terraform"
+      Team        = "Slashtec-DevOps"
       Module      = "database"
     }
   }

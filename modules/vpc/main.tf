@@ -37,7 +37,7 @@ resource "aws_internet_gateway" "main" {
 # Subnets - Single AZ Architecture
 #------------------------------------------------------------------------------
 
-# Public Subnet (ALBs)
+# Public Subnet (ALBs) - AZ1
 resource "aws_subnet" "public" {
   vpc_id                  = aws_vpc.main.id
   cidr_block              = var.public_subnet_cidr
@@ -45,7 +45,21 @@ resource "aws_subnet" "public" {
   map_public_ip_on_launch = true
 
   tags = {
-    Name = "${local.name_prefix}-public-subnet"
+    Name = "${local.name_prefix}-public-subnet-az1"
+    Tier = "public"
+  }
+}
+
+# Public Subnet (ALBs) - AZ2 (Required for ALBs)
+resource "aws_subnet" "public_az2" {
+  count                   = var.public_subnet_cidr_az2 != "" ? 1 : 0
+  vpc_id                  = aws_vpc.main.id
+  cidr_block              = var.public_subnet_cidr_az2
+  availability_zone       = var.availability_zone_2
+  map_public_ip_on_launch = true
+
+  tags = {
+    Name = "${local.name_prefix}-public-subnet-az2"
     Tier = "public"
   }
 }
@@ -62,14 +76,27 @@ resource "aws_subnet" "private_web" {
   }
 }
 
-# Private Subnet - App Tier (API, Integration, Logging, RabbitMQ, ML, Content)
+# Private Subnet - App Tier AZ1 (API, Integration, Logging, RabbitMQ, ML, Content)
 resource "aws_subnet" "private_app" {
   vpc_id            = aws_vpc.main.id
   cidr_block        = var.private_app_cidr
   availability_zone = var.availability_zone
 
   tags = {
-    Name = "${local.name_prefix}-private-app-subnet"
+    Name = "${local.name_prefix}-private-app-subnet-az1"
+    Tier = "app"
+  }
+}
+
+# Private Subnet - App Tier AZ2 (Required for internal ALBs)
+resource "aws_subnet" "private_app_az2" {
+  count             = var.private_app_cidr_az2 != "" ? 1 : 0
+  vpc_id            = aws_vpc.main.id
+  cidr_block        = var.private_app_cidr_az2
+  availability_zone = var.availability_zone_2
+
+  tags = {
+    Name = "${local.name_prefix}-private-app-subnet-az2"
     Tier = "app"
   }
 }
@@ -169,6 +196,12 @@ resource "aws_route_table_association" "public" {
   route_table_id = aws_route_table.public.id
 }
 
+resource "aws_route_table_association" "public_az2" {
+  count          = var.public_subnet_cidr_az2 != "" ? 1 : 0
+  subnet_id      = aws_subnet.public_az2[0].id
+  route_table_id = aws_route_table.public.id
+}
+
 resource "aws_route_table_association" "private_web" {
   subnet_id      = aws_subnet.private_web.id
   route_table_id = aws_route_table.private.id
@@ -176,6 +209,12 @@ resource "aws_route_table_association" "private_web" {
 
 resource "aws_route_table_association" "private_app" {
   subnet_id      = aws_subnet.private_app.id
+  route_table_id = aws_route_table.private.id
+}
+
+resource "aws_route_table_association" "private_app_az2" {
+  count          = var.private_app_cidr_az2 != "" ? 1 : 0
+  subnet_id      = aws_subnet.private_app_az2[0].id
   route_table_id = aws_route_table.private.id
 }
 

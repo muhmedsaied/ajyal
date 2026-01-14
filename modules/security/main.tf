@@ -198,28 +198,19 @@ resource "aws_wafv2_web_acl" "main" {
 # Security Groups
 #------------------------------------------------------------------------------
 
-# ALB Security Group (Public facing)
+# CloudFront Managed Prefix List
+data "aws_ec2_managed_prefix_list" "cloudfront" {
+  name = "com.amazonaws.global.cloudfront.origin-facing"
+}
+
+# ALB Security Group (CloudFront only)
+# Using separate rules to allow in-place updates without recreating the security group
 resource "aws_security_group" "alb" {
   name        = "${local.name_prefix}-alb-sg"
-  description = "Security group for Application Load Balancers"
+  description = "Security group for Application Load Balancers"  # Keep original description to avoid replacement
   vpc_id      = var.vpc_id
 
-  ingress {
-    from_port   = 443
-    to_port     = 443
-    protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"]
-    description = "HTTPS from anywhere (filtered by CloudFront/WAF)"
-  }
-
-  ingress {
-    from_port   = 80
-    to_port     = 80
-    protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"]
-    description = "HTTP redirect"
-  }
-
+  # Egress rule inline (rarely changes)
   egress {
     from_port   = 0
     to_port     = 0
@@ -230,6 +221,49 @@ resource "aws_security_group" "alb" {
   tags = {
     Name = "${local.name_prefix}-alb-sg"
   }
+
+  lifecycle {
+    create_before_destroy = true
+  }
+}
+
+# ALB Security Group Rules - Separate resources for in-place updates
+
+# HTTPS from CloudFront only
+resource "aws_security_group_rule" "alb_https_cloudfront" {
+  type              = "ingress"
+  from_port         = 443
+  to_port           = 443
+  protocol          = "tcp"
+  prefix_list_ids   = [data.aws_ec2_managed_prefix_list.cloudfront.id]
+  security_group_id = aws_security_group.alb.id
+  description       = "HTTPS from CloudFront only"
+}
+
+# NOTE: CloudFront prefix list has 45+ entries which each consume rule capacity.
+# With default 60 rule limit, we can only use the prefix list for HTTPS (not HTTP too).
+# HTTP traffic should be redirected to HTTPS at CloudFront level anyway.
+
+# HTTP from VPC (for internal ALB access)
+resource "aws_security_group_rule" "alb_http_vpc" {
+  type              = "ingress"
+  from_port         = 80
+  to_port           = 80
+  protocol          = "tcp"
+  cidr_blocks       = [var.vpc_cidr]
+  security_group_id = aws_security_group.alb.id
+  description       = "HTTP from VPC (internal ALB)"
+}
+
+# HTTPS from VPC (for internal ALB access)
+resource "aws_security_group_rule" "alb_https_vpc" {
+  type              = "ingress"
+  from_port         = 443
+  to_port           = 443
+  protocol          = "tcp"
+  cidr_blocks       = [var.vpc_cidr]
+  security_group_id = aws_security_group.alb.id
+  description       = "HTTPS from VPC (internal ALB)"
 }
 
 # Windows Server Security Group

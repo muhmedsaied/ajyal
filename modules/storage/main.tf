@@ -208,6 +208,72 @@ resource "aws_s3_bucket_lifecycle_configuration" "backup" {
 }
 
 #------------------------------------------------------------------------------
+# S3 Bucket for CodeDeploy Artifacts
+#------------------------------------------------------------------------------
+
+resource "aws_s3_bucket" "deployment" {
+  count  = var.enable_deployment_bucket ? 1 : 0
+  bucket = "${local.name_prefix}-deployments-${data.aws_caller_identity.current.account_id}"
+
+  tags = {
+    Name = "${local.name_prefix}-deployments"
+  }
+}
+
+resource "aws_s3_bucket_versioning" "deployment" {
+  count  = var.enable_deployment_bucket ? 1 : 0
+  bucket = aws_s3_bucket.deployment[0].id
+
+  versioning_configuration {
+    status = "Enabled"
+  }
+}
+
+resource "aws_s3_bucket_server_side_encryption_configuration" "deployment" {
+  count  = var.enable_deployment_bucket ? 1 : 0
+  bucket = aws_s3_bucket.deployment[0].id
+
+  rule {
+    apply_server_side_encryption_by_default {
+      kms_master_key_id = var.kms_key_arn
+      sse_algorithm     = "aws:kms"
+    }
+    bucket_key_enabled = true
+  }
+}
+
+resource "aws_s3_bucket_public_access_block" "deployment" {
+  count  = var.enable_deployment_bucket ? 1 : 0
+  bucket = aws_s3_bucket.deployment[0].id
+
+  block_public_acls       = true
+  block_public_policy     = true
+  ignore_public_acls      = true
+  restrict_public_buckets = true
+}
+
+# Lifecycle policy for deployment artifacts - keep only recent versions
+resource "aws_s3_bucket_lifecycle_configuration" "deployment" {
+  count  = var.enable_deployment_bucket ? 1 : 0
+  bucket = aws_s3_bucket.deployment[0].id
+
+  rule {
+    id     = "cleanup-old-versions"
+    status = "Enabled"
+
+    filter {}
+
+    noncurrent_version_expiration {
+      noncurrent_days = 30
+    }
+
+    expiration {
+      expired_object_delete_marker = true
+    }
+  }
+}
+
+#------------------------------------------------------------------------------
 # S3 Bucket for Logs
 #------------------------------------------------------------------------------
 

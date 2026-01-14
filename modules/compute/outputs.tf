@@ -98,27 +98,28 @@ output "logging_asg_name" {
 }
 
 #------------------------------------------------------------------------------
-# CloudFront Outputs
+# CloudFront Outputs (Single Distribution)
 #------------------------------------------------------------------------------
 
-output "app_cloudfront_domain_name" {
-  description = "App CloudFront distribution domain name"
-  value       = var.enable_cloudfront && var.enable_app_servers ? aws_cloudfront_distribution.app[0].domain_name : null
+output "cloudfront_domain_name" {
+  description = "CloudFront distribution domain name"
+  value       = var.enable_cloudfront ? aws_cloudfront_distribution.main[0].domain_name : null
 }
 
-output "app_cloudfront_id" {
-  description = "App CloudFront distribution ID"
-  value       = var.enable_cloudfront && var.enable_app_servers ? aws_cloudfront_distribution.app[0].id : null
+output "cloudfront_id" {
+  description = "CloudFront distribution ID"
+  value       = var.enable_cloudfront ? aws_cloudfront_distribution.main[0].id : null
+}
+
+# Legacy outputs for backward compatibility
+output "app_cloudfront_domain_name" {
+  description = "CloudFront distribution domain name (legacy - use cloudfront_domain_name)"
+  value       = var.enable_cloudfront ? aws_cloudfront_distribution.main[0].domain_name : null
 }
 
 output "botpress_cloudfront_domain_name" {
-  description = "Botpress CloudFront distribution domain name"
-  value       = var.enable_cloudfront && var.enable_botpress_servers ? aws_cloudfront_distribution.botpress[0].domain_name : null
-}
-
-output "botpress_cloudfront_id" {
-  description = "Botpress CloudFront distribution ID"
-  value       = var.enable_cloudfront && var.enable_botpress_servers ? aws_cloudfront_distribution.botpress[0].id : null
+  description = "CloudFront distribution domain name (legacy - use cloudfront_domain_name)"
+  value       = var.enable_cloudfront ? aws_cloudfront_distribution.main[0].domain_name : null
 }
 
 #------------------------------------------------------------------------------

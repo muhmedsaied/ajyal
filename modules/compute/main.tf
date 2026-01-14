@@ -54,7 +54,7 @@ resource "aws_lb" "app" {
   internal           = false
   load_balancer_type = "application"
   security_groups    = [var.alb_security_group_id]
-  subnets            = [var.public_subnet_id]
+  subnets            = length(var.public_subnet_ids) > 0 ? var.public_subnet_ids : [var.public_subnet_id]
 
   enable_deletion_protection = false
 
@@ -106,7 +106,7 @@ resource "aws_lb" "botpress" {
   internal           = false
   load_balancer_type = "application"
   security_groups    = [var.alb_security_group_id]
-  subnets            = [var.public_subnet_id]
+  subnets            = length(var.public_subnet_ids) > 0 ? var.public_subnet_ids : [var.public_subnet_id]
 
   enable_deletion_protection = false
 
@@ -161,7 +161,7 @@ resource "aws_lb" "api" {
   internal           = true
   load_balancer_type = "application"
   security_groups    = [var.alb_security_group_id]
-  subnets            = [var.private_app_subnet_id]
+  subnets            = length(var.private_app_subnet_ids) > 0 ? var.private_app_subnet_ids : [var.private_app_subnet_id]
 
   enable_deletion_protection = false
 
@@ -263,10 +263,85 @@ resource "aws_launch_template" "app_server" {
     Invoke-WebRequest -Uri $cwSource -OutFile $cwDest
     Start-Process msiexec.exe -ArgumentList "/i $cwDest /quiet" -Wait
 
-    # Set hostname tag
-    $instanceId = (Invoke-RestMethod -Uri http://169.254.169.254/latest/meta-data/instance-id)
+    # Configure CloudWatch Agent for memory metrics and IIS logs
+    $cwConfig = @'
+    {
+      "agent": {
+        "metrics_collection_interval": 60,
+        "run_as_user": "cwagent"
+      },
+      "metrics": {
+        "namespace": "${var.environment}-ajyal",
+        "append_dimensions": {
+          "InstanceId": "$${aws:InstanceId}",
+          "AutoScalingGroupName": "$${aws:AutoScalingGroupName}"
+        },
+        "metrics_collected": {
+          "Memory": {
+            "measurement": ["% Committed Bytes In Use", "Available MBytes"],
+            "metrics_collection_interval": 60
+          },
+          "Paging File": {
+            "measurement": ["% Usage"],
+            "metrics_collection_interval": 60,
+            "resources": ["*"]
+          },
+          "LogicalDisk": {
+            "measurement": ["% Free Space", "Free Megabytes"],
+            "metrics_collection_interval": 60,
+            "resources": ["*"]
+          },
+          "Processor": {
+            "measurement": ["% Processor Time", "% Idle Time"],
+            "metrics_collection_interval": 60,
+            "resources": ["_Total"]
+          }
+        }
+      },
+      "logs": {
+        "logs_collected": {
+          "windows_events": {
+            "collect_list": [
+              {
+                "event_name": "Application",
+                "event_levels": ["ERROR", "WARNING"],
+                "log_group_name": "/${var.environment}-ajyal/windows/app-server/application",
+                "log_stream_name": "{instance_id}"
+              },
+              {
+                "event_name": "System",
+                "event_levels": ["ERROR", "WARNING"],
+                "log_group_name": "/${var.environment}-ajyal/windows/app-server/system",
+                "log_stream_name": "{instance_id}"
+              }
+            ]
+          },
+          "files": {
+            "collect_list": [
+              {
+                "file_path": "C:\\inetpub\\logs\\LogFiles\\W3SVC1\\*.log",
+                "log_group_name": "/${var.environment}-ajyal/windows/app-server/iis",
+                "log_stream_name": "{instance_id}",
+                "timezone": "UTC"
+              },
+              {
+                "file_path": "C:\\AjyalApp\\logs\\*.log",
+                "log_group_name": "/${var.environment}-ajyal/windows/app-server/application-logs",
+                "log_stream_name": "{instance_id}",
+                "timezone": "UTC"
+              }
+            ]
+          }
+        }
+      }
+    }
+'@
+    $cwConfig | Out-File -FilePath "C:\ProgramData\Amazon\AmazonCloudWatchAgent\amazon-cloudwatch-agent.json" -Encoding UTF8
 
-    Write-Host "CodeDeploy and CloudWatch agents installed successfully"
+    # Start CloudWatch Agent
+    & "C:\Program Files\Amazon\AmazonCloudWatchAgent\amazon-cloudwatch-agent-ctl.ps1" -a fetch-config -m ec2 -c file:"C:\ProgramData\Amazon\AmazonCloudWatchAgent\amazon-cloudwatch-agent.json" -s
+
+    Write-Host "CodeDeploy and CloudWatch agents installed and configured successfully"
     </powershell>
     EOF
   )
@@ -336,6 +411,77 @@ resource "aws_launch_template" "api_server" {
     $cwDest = "C:\temp\amazon-cloudwatch-agent.msi"
     Invoke-WebRequest -Uri $cwSource -OutFile $cwDest
     Start-Process msiexec.exe -ArgumentList "/i $cwDest /quiet" -Wait
+
+    # Configure CloudWatch Agent for memory metrics and API logs
+    $cwConfig = @'
+    {
+      "agent": {
+        "metrics_collection_interval": 60,
+        "run_as_user": "cwagent"
+      },
+      "metrics": {
+        "namespace": "${var.environment}-ajyal",
+        "append_dimensions": {
+          "InstanceId": "$${aws:InstanceId}",
+          "AutoScalingGroupName": "$${aws:AutoScalingGroupName}"
+        },
+        "metrics_collected": {
+          "Memory": {
+            "measurement": ["% Committed Bytes In Use", "Available MBytes"],
+            "metrics_collection_interval": 60
+          },
+          "LogicalDisk": {
+            "measurement": ["% Free Space", "Free Megabytes"],
+            "metrics_collection_interval": 60,
+            "resources": ["*"]
+          },
+          "Processor": {
+            "measurement": ["% Processor Time"],
+            "metrics_collection_interval": 60,
+            "resources": ["_Total"]
+          }
+        }
+      },
+      "logs": {
+        "logs_collected": {
+          "windows_events": {
+            "collect_list": [
+              {
+                "event_name": "Application",
+                "event_levels": ["ERROR", "WARNING"],
+                "log_group_name": "/${var.environment}-ajyal/windows/api-server/application",
+                "log_stream_name": "{instance_id}"
+              },
+              {
+                "event_name": "System",
+                "event_levels": ["ERROR", "WARNING"],
+                "log_group_name": "/${var.environment}-ajyal/windows/api-server/system",
+                "log_stream_name": "{instance_id}"
+              }
+            ]
+          },
+          "files": {
+            "collect_list": [
+              {
+                "file_path": "C:\\inetpub\\logs\\LogFiles\\W3SVC1\\*.log",
+                "log_group_name": "/${var.environment}-ajyal/windows/api-server/iis",
+                "log_stream_name": "{instance_id}",
+                "timezone": "UTC"
+              },
+              {
+                "file_path": "C:\\AjyalAPI\\logs\\*.log",
+                "log_group_name": "/${var.environment}-ajyal/windows/api-server/api-logs",
+                "log_stream_name": "{instance_id}",
+                "timezone": "UTC"
+              }
+            ]
+          }
+        }
+      }
+    }
+'@
+    $cwConfig | Out-File -FilePath "C:\ProgramData\Amazon\AmazonCloudWatchAgent\amazon-cloudwatch-agent.json" -Encoding UTF8
+    & "C:\Program Files\Amazon\AmazonCloudWatchAgent\amazon-cloudwatch-agent-ctl.ps1" -a fetch-config -m ec2 -c file:"C:\ProgramData\Amazon\AmazonCloudWatchAgent\amazon-cloudwatch-agent.json" -s
     </powershell>
     EOF
   )
@@ -405,6 +551,71 @@ resource "aws_launch_template" "integration_server" {
     $cwDest = "C:\temp\amazon-cloudwatch-agent.msi"
     Invoke-WebRequest -Uri $cwSource -OutFile $cwDest
     Start-Process msiexec.exe -ArgumentList "/i $cwDest /quiet" -Wait
+
+    # Configure CloudWatch Agent for memory metrics and integration logs
+    $cwConfig = @'
+    {
+      "agent": {
+        "metrics_collection_interval": 60,
+        "run_as_user": "cwagent"
+      },
+      "metrics": {
+        "namespace": "${var.environment}-ajyal",
+        "append_dimensions": {
+          "InstanceId": "$${aws:InstanceId}",
+          "AutoScalingGroupName": "$${aws:AutoScalingGroupName}"
+        },
+        "metrics_collected": {
+          "Memory": {
+            "measurement": ["% Committed Bytes In Use", "Available MBytes"],
+            "metrics_collection_interval": 60
+          },
+          "LogicalDisk": {
+            "measurement": ["% Free Space", "Free Megabytes"],
+            "metrics_collection_interval": 60,
+            "resources": ["*"]
+          },
+          "Processor": {
+            "measurement": ["% Processor Time"],
+            "metrics_collection_interval": 60,
+            "resources": ["_Total"]
+          }
+        }
+      },
+      "logs": {
+        "logs_collected": {
+          "windows_events": {
+            "collect_list": [
+              {
+                "event_name": "Application",
+                "event_levels": ["ERROR", "WARNING"],
+                "log_group_name": "/${var.environment}-ajyal/windows/integration-server/application",
+                "log_stream_name": "{instance_id}"
+              },
+              {
+                "event_name": "System",
+                "event_levels": ["ERROR", "WARNING"],
+                "log_group_name": "/${var.environment}-ajyal/windows/integration-server/system",
+                "log_stream_name": "{instance_id}"
+              }
+            ]
+          },
+          "files": {
+            "collect_list": [
+              {
+                "file_path": "C:\\AjyalIntegration\\logs\\*.log",
+                "log_group_name": "/${var.environment}-ajyal/windows/integration-server/integration-logs",
+                "log_stream_name": "{instance_id}",
+                "timezone": "UTC"
+              }
+            ]
+          }
+        }
+      }
+    }
+'@
+    $cwConfig | Out-File -FilePath "C:\ProgramData\Amazon\AmazonCloudWatchAgent\amazon-cloudwatch-agent.json" -Encoding UTF8
+    & "C:\Program Files\Amazon\AmazonCloudWatchAgent\amazon-cloudwatch-agent-ctl.ps1" -a fetch-config -m ec2 -c file:"C:\ProgramData\Amazon\AmazonCloudWatchAgent\amazon-cloudwatch-agent.json" -s
     </powershell>
     EOF
   )
@@ -474,6 +685,77 @@ resource "aws_launch_template" "logging_server" {
     $cwDest = "C:\temp\amazon-cloudwatch-agent.msi"
     Invoke-WebRequest -Uri $cwSource -OutFile $cwDest
     Start-Process msiexec.exe -ArgumentList "/i $cwDest /quiet" -Wait
+
+    # Configure CloudWatch Agent for memory metrics and centralized logs
+    $cwConfig = @'
+    {
+      "agent": {
+        "metrics_collection_interval": 60,
+        "run_as_user": "cwagent"
+      },
+      "metrics": {
+        "namespace": "${var.environment}-ajyal",
+        "append_dimensions": {
+          "InstanceId": "$${aws:InstanceId}",
+          "AutoScalingGroupName": "$${aws:AutoScalingGroupName}"
+        },
+        "metrics_collected": {
+          "Memory": {
+            "measurement": ["% Committed Bytes In Use", "Available MBytes"],
+            "metrics_collection_interval": 60
+          },
+          "LogicalDisk": {
+            "measurement": ["% Free Space", "Free Megabytes"],
+            "metrics_collection_interval": 60,
+            "resources": ["*"]
+          },
+          "Processor": {
+            "measurement": ["% Processor Time"],
+            "metrics_collection_interval": 60,
+            "resources": ["_Total"]
+          }
+        }
+      },
+      "logs": {
+        "logs_collected": {
+          "windows_events": {
+            "collect_list": [
+              {
+                "event_name": "Application",
+                "event_levels": ["ERROR", "WARNING", "INFORMATION"],
+                "log_group_name": "/${var.environment}-ajyal/windows/logging-server/application",
+                "log_stream_name": "{instance_id}"
+              },
+              {
+                "event_name": "System",
+                "event_levels": ["ERROR", "WARNING"],
+                "log_group_name": "/${var.environment}-ajyal/windows/logging-server/system",
+                "log_stream_name": "{instance_id}"
+              },
+              {
+                "event_name": "Security",
+                "event_levels": ["ERROR", "WARNING", "INFORMATION"],
+                "log_group_name": "/${var.environment}-ajyal/windows/logging-server/security",
+                "log_stream_name": "{instance_id}"
+              }
+            ]
+          },
+          "files": {
+            "collect_list": [
+              {
+                "file_path": "C:\\Logs\\**\\*.log",
+                "log_group_name": "/${var.environment}-ajyal/windows/logging-server/centralized-logs",
+                "log_stream_name": "{instance_id}",
+                "timezone": "UTC"
+              }
+            ]
+          }
+        }
+      }
+    }
+'@
+    $cwConfig | Out-File -FilePath "C:\ProgramData\Amazon\AmazonCloudWatchAgent\amazon-cloudwatch-agent.json" -Encoding UTF8
+    & "C:\Program Files\Amazon\AmazonCloudWatchAgent\amazon-cloudwatch-agent-ctl.ps1" -a fetch-config -m ec2 -c file:"C:\ProgramData\Amazon\AmazonCloudWatchAgent\amazon-cloudwatch-agent.json" -s
     </powershell>
     EOF
   )
@@ -557,6 +839,68 @@ resource "aws_launch_template" "botpress" {
     systemctl start docker
     usermod -aG docker ec2-user
 
+    # Configure CloudWatch Agent for memory metrics and Botpress logs
+    cat > /opt/aws/amazon-cloudwatch-agent/etc/amazon-cloudwatch-agent.json << 'CWCONFIG'
+    {
+      "agent": {
+        "metrics_collection_interval": 60,
+        "run_as_user": "cwagent"
+      },
+      "metrics": {
+        "namespace": "${var.environment}-ajyal",
+        "append_dimensions": {
+          "InstanceId": "$${aws:InstanceId}",
+          "AutoScalingGroupName": "$${aws:AutoScalingGroupName}"
+        },
+        "metrics_collected": {
+          "mem": {
+            "measurement": ["mem_used_percent", "mem_available", "mem_total"],
+            "metrics_collection_interval": 60
+          },
+          "disk": {
+            "measurement": ["disk_used_percent", "disk_free", "disk_total"],
+            "metrics_collection_interval": 60,
+            "resources": ["/", "/home"]
+          },
+          "cpu": {
+            "measurement": ["cpu_usage_idle", "cpu_usage_user", "cpu_usage_system"],
+            "metrics_collection_interval": 60,
+            "totalcpu": true
+          }
+        }
+      },
+      "logs": {
+        "logs_collected": {
+          "files": {
+            "collect_list": [
+              {
+                "file_path": "/var/log/messages",
+                "log_group_name": "/${var.environment}-ajyal/linux/botpress/system",
+                "log_stream_name": "{instance_id}",
+                "timezone": "UTC"
+              },
+              {
+                "file_path": "/var/log/docker*.log",
+                "log_group_name": "/${var.environment}-ajyal/linux/botpress/docker",
+                "log_stream_name": "{instance_id}",
+                "timezone": "UTC"
+              },
+              {
+                "file_path": "/home/ec2-user/botpress/logs/*.log",
+                "log_group_name": "/${var.environment}-ajyal/linux/botpress/application",
+                "log_stream_name": "{instance_id}",
+                "timezone": "UTC"
+              }
+            ]
+          }
+        }
+      }
+    }
+CWCONFIG
+
+    # Start CloudWatch Agent
+    /opt/aws/amazon-cloudwatch-agent/bin/amazon-cloudwatch-agent-ctl -a fetch-config -m ec2 -c file:/opt/aws/amazon-cloudwatch-agent/etc/amazon-cloudwatch-agent.json -s
+
     echo "Bootstrap complete"
     EOF
   )
@@ -627,6 +971,61 @@ resource "aws_instance" "rabbitmq" {
     rabbitmqctl set_user_tags admin administrator
     rabbitmqctl set_permissions -p / admin ".*" ".*" ".*"
 
+    # Configure CloudWatch Agent for memory metrics and RabbitMQ logs
+    cat > /opt/aws/amazon-cloudwatch-agent/etc/amazon-cloudwatch-agent.json << 'CWCONFIG'
+    {
+      "agent": {
+        "metrics_collection_interval": 60,
+        "run_as_user": "cwagent"
+      },
+      "metrics": {
+        "namespace": "${var.environment}-ajyal",
+        "append_dimensions": {
+          "InstanceId": "$${aws:InstanceId}"
+        },
+        "metrics_collected": {
+          "mem": {
+            "measurement": ["mem_used_percent", "mem_available", "mem_total"],
+            "metrics_collection_interval": 60
+          },
+          "disk": {
+            "measurement": ["disk_used_percent", "disk_free", "disk_total"],
+            "metrics_collection_interval": 60,
+            "resources": ["/", "/var"]
+          },
+          "cpu": {
+            "measurement": ["cpu_usage_idle", "cpu_usage_user", "cpu_usage_system"],
+            "metrics_collection_interval": 60,
+            "totalcpu": true
+          }
+        }
+      },
+      "logs": {
+        "logs_collected": {
+          "files": {
+            "collect_list": [
+              {
+                "file_path": "/var/log/messages",
+                "log_group_name": "/${var.environment}-ajyal/linux/rabbitmq/system",
+                "log_stream_name": "{instance_id}",
+                "timezone": "UTC"
+              },
+              {
+                "file_path": "/var/log/rabbitmq/*.log",
+                "log_group_name": "/${var.environment}-ajyal/linux/rabbitmq/application",
+                "log_stream_name": "{instance_id}",
+                "timezone": "UTC"
+              }
+            ]
+          }
+        }
+      }
+    }
+CWCONFIG
+
+    # Start CloudWatch Agent
+    /opt/aws/amazon-cloudwatch-agent/bin/amazon-cloudwatch-agent-ctl -a fetch-config -m ec2 -c file:/opt/aws/amazon-cloudwatch-agent/etc/amazon-cloudwatch-agent.json -s
+
     echo "RabbitMQ installation complete"
     EOF
   )
@@ -693,6 +1092,62 @@ resource "aws_launch_template" "ml" {
 
     # Mount ML EFS if available
     ${var.ml_efs_id != "" ? "mkdir -p /mnt/ml && mount -t efs ${var.ml_efs_id}:/ /mnt/ml" : "echo 'No ML EFS configured'"}
+
+    # Configure CloudWatch Agent for memory metrics and ML logs
+    cat > /opt/aws/amazon-cloudwatch-agent/etc/amazon-cloudwatch-agent.json << 'CWCONFIG'
+    {
+      "agent": {
+        "metrics_collection_interval": 60,
+        "run_as_user": "cwagent"
+      },
+      "metrics": {
+        "namespace": "${var.environment}-ajyal",
+        "append_dimensions": {
+          "InstanceId": "$${aws:InstanceId}",
+          "AutoScalingGroupName": "$${aws:AutoScalingGroupName}"
+        },
+        "metrics_collected": {
+          "mem": {
+            "measurement": ["mem_used_percent", "mem_available", "mem_total"],
+            "metrics_collection_interval": 60
+          },
+          "disk": {
+            "measurement": ["disk_used_percent", "disk_free", "disk_total"],
+            "metrics_collection_interval": 60,
+            "resources": ["/", "/mnt/ml"]
+          },
+          "cpu": {
+            "measurement": ["cpu_usage_idle", "cpu_usage_user", "cpu_usage_system"],
+            "metrics_collection_interval": 60,
+            "totalcpu": true
+          }
+        }
+      },
+      "logs": {
+        "logs_collected": {
+          "files": {
+            "collect_list": [
+              {
+                "file_path": "/var/log/messages",
+                "log_group_name": "/${var.environment}-ajyal/linux/ml/system",
+                "log_stream_name": "{instance_id}",
+                "timezone": "UTC"
+              },
+              {
+                "file_path": "/home/ec2-user/ml/logs/*.log",
+                "log_group_name": "/${var.environment}-ajyal/linux/ml/application",
+                "log_stream_name": "{instance_id}",
+                "timezone": "UTC"
+              }
+            ]
+          }
+        }
+      }
+    }
+CWCONFIG
+
+    # Start CloudWatch Agent
+    /opt/aws/amazon-cloudwatch-agent/bin/amazon-cloudwatch-agent-ctl -a fetch-config -m ec2 -c file:/opt/aws/amazon-cloudwatch-agent/etc/amazon-cloudwatch-agent.json -s
 
     echo "Bootstrap complete"
     EOF
@@ -767,6 +1222,68 @@ resource "aws_launch_template" "content" {
 
     # Mount Content EFS if available
     ${var.content_efs_id != "" ? "mkdir -p /mnt/content && mount -t efs ${var.content_efs_id}:/ /mnt/content" : "echo 'No Content EFS configured'"}
+
+    # Configure CloudWatch Agent for memory metrics and content server logs
+    cat > /opt/aws/amazon-cloudwatch-agent/etc/amazon-cloudwatch-agent.json << 'CWCONFIG'
+    {
+      "agent": {
+        "metrics_collection_interval": 60,
+        "run_as_user": "cwagent"
+      },
+      "metrics": {
+        "namespace": "${var.environment}-ajyal",
+        "append_dimensions": {
+          "InstanceId": "$${aws:InstanceId}",
+          "AutoScalingGroupName": "$${aws:AutoScalingGroupName}"
+        },
+        "metrics_collected": {
+          "mem": {
+            "measurement": ["mem_used_percent", "mem_available", "mem_total"],
+            "metrics_collection_interval": 60
+          },
+          "disk": {
+            "measurement": ["disk_used_percent", "disk_free", "disk_total"],
+            "metrics_collection_interval": 60,
+            "resources": ["/", "/mnt/content"]
+          },
+          "cpu": {
+            "measurement": ["cpu_usage_idle", "cpu_usage_user", "cpu_usage_system"],
+            "metrics_collection_interval": 60,
+            "totalcpu": true
+          }
+        }
+      },
+      "logs": {
+        "logs_collected": {
+          "files": {
+            "collect_list": [
+              {
+                "file_path": "/var/log/messages",
+                "log_group_name": "/${var.environment}-ajyal/linux/content/system",
+                "log_stream_name": "{instance_id}",
+                "timezone": "UTC"
+              },
+              {
+                "file_path": "/home/ec2-user/content/logs/*.log",
+                "log_group_name": "/${var.environment}-ajyal/linux/content/application",
+                "log_stream_name": "{instance_id}",
+                "timezone": "UTC"
+              },
+              {
+                "file_path": "/var/log/nginx/*.log",
+                "log_group_name": "/${var.environment}-ajyal/linux/content/nginx",
+                "log_stream_name": "{instance_id}",
+                "timezone": "UTC"
+              }
+            ]
+          }
+        }
+      }
+    }
+CWCONFIG
+
+    # Start CloudWatch Agent
+    /opt/aws/amazon-cloudwatch-agent/bin/amazon-cloudwatch-agent-ctl -a fetch-config -m ec2 -c file:/opt/aws/amazon-cloudwatch-agent/etc/amazon-cloudwatch-agent.json -s
 
     echo "Bootstrap complete"
     EOF
@@ -965,28 +1482,58 @@ resource "aws_autoscaling_group" "content" {
 }
 
 #------------------------------------------------------------------------------
-# CloudFront Distribution (CDN for App ALB)
-# Provides caching, DDoS protection, and HTTPS termination
+# Single CloudFront Distribution with Multiple Origins
+# Routes /botpress/* to Botpress ALB, everything else to App ALB
 #------------------------------------------------------------------------------
 
-resource "aws_cloudfront_distribution" "app" {
-  count   = var.enable_cloudfront && var.enable_app_servers ? 1 : 0
+resource "aws_cloudfront_distribution" "main" {
+  count   = var.enable_cloudfront ? 1 : 0
   enabled = true
-  comment = "${local.name_prefix} App CloudFront Distribution"
+  comment = "${local.name_prefix} CloudFront Distribution"
 
-  # App ALB as origin
-  origin {
-    domain_name = aws_lb.app[0].dns_name
-    origin_id   = "app-alb"
+  # App ALB as primary origin
+  dynamic "origin" {
+    for_each = var.enable_app_servers ? [1] : []
+    content {
+      domain_name = aws_lb.app[0].dns_name
+      origin_id   = "app-alb"
 
-    custom_origin_config {
-      http_port              = 80
-      https_port             = 443
-      origin_protocol_policy = "http-only"
-      origin_ssl_protocols   = ["TLSv1.2"]
+      custom_origin_config {
+        http_port              = 80
+        https_port             = 443
+        origin_protocol_policy = "http-only"
+        origin_ssl_protocols   = ["TLSv1.2"]
+      }
+
+      custom_header {
+        name  = "X-CloudFront-Secret"
+        value = var.cloudfront_secret_header
+      }
     }
   }
 
+  # Botpress ALB as secondary origin
+  dynamic "origin" {
+    for_each = var.enable_botpress_servers ? [1] : []
+    content {
+      domain_name = aws_lb.botpress[0].dns_name
+      origin_id   = "botpress-alb"
+
+      custom_origin_config {
+        http_port              = 80
+        https_port             = 443
+        origin_protocol_policy = "http-only"
+        origin_ssl_protocols   = ["TLSv1.2"]
+      }
+
+      custom_header {
+        name  = "X-CloudFront-Secret"
+        value = var.cloudfront_secret_header
+      }
+    }
+  }
+
+  # Default behavior - App ALB
   default_cache_behavior {
     allowed_methods  = ["DELETE", "GET", "HEAD", "OPTIONS", "PATCH", "POST", "PUT"]
     cached_methods   = ["GET", "HEAD"]
@@ -1006,6 +1553,58 @@ resource "aws_cloudfront_distribution" "app" {
     default_ttl            = 0
     max_ttl                = 86400
     compress               = true
+  }
+
+  # Botpress path - route to Botpress ALB
+  dynamic "ordered_cache_behavior" {
+    for_each = var.enable_botpress_servers ? [1] : []
+    content {
+      path_pattern     = "/botpress/*"
+      allowed_methods  = ["DELETE", "GET", "HEAD", "OPTIONS", "PATCH", "POST", "PUT"]
+      cached_methods   = ["GET", "HEAD"]
+      target_origin_id = "botpress-alb"
+
+      forwarded_values {
+        query_string = true
+        headers      = ["Host", "Origin", "Authorization"]
+
+        cookies {
+          forward = "all"
+        }
+      }
+
+      viewer_protocol_policy = "redirect-to-https"
+      min_ttl                = 0
+      default_ttl            = 0
+      max_ttl                = 86400
+      compress               = true
+    }
+  }
+
+  # Botpress WebSocket support
+  dynamic "ordered_cache_behavior" {
+    for_each = var.enable_botpress_servers ? [1] : []
+    content {
+      path_pattern     = "/socket.io/*"
+      allowed_methods  = ["DELETE", "GET", "HEAD", "OPTIONS", "PATCH", "POST", "PUT"]
+      cached_methods   = ["GET", "HEAD"]
+      target_origin_id = "botpress-alb"
+
+      forwarded_values {
+        query_string = true
+        headers      = ["*"]
+
+        cookies {
+          forward = "all"
+        }
+      }
+
+      viewer_protocol_policy = "redirect-to-https"
+      min_ttl                = 0
+      default_ttl            = 0
+      max_ttl                = 0
+      compress               = false
+    }
   }
 
   # Cache static assets
@@ -1066,67 +1665,6 @@ resource "aws_cloudfront_distribution" "app" {
   web_acl_id = var.waf_web_acl_arn
 
   tags = {
-    Name = "${local.name_prefix}-app-cloudfront"
-  }
-}
-
-#------------------------------------------------------------------------------
-# CloudFront Distribution (CDN for Botpress ALB)
-#------------------------------------------------------------------------------
-
-resource "aws_cloudfront_distribution" "botpress" {
-  count   = var.enable_cloudfront && var.enable_botpress_servers ? 1 : 0
-  enabled = true
-  comment = "${local.name_prefix} Botpress CloudFront Distribution"
-
-  origin {
-    domain_name = aws_lb.botpress[0].dns_name
-    origin_id   = "botpress-alb"
-
-    custom_origin_config {
-      http_port              = 80
-      https_port             = 443
-      origin_protocol_policy = "http-only"
-      origin_ssl_protocols   = ["TLSv1.2"]
-    }
-  }
-
-  default_cache_behavior {
-    allowed_methods  = ["DELETE", "GET", "HEAD", "OPTIONS", "PATCH", "POST", "PUT"]
-    cached_methods   = ["GET", "HEAD"]
-    target_origin_id = "botpress-alb"
-
-    forwarded_values {
-      query_string = true
-      headers      = ["Host", "Origin", "Authorization"]
-
-      cookies {
-        forward = "all"
-      }
-    }
-
-    viewer_protocol_policy = "redirect-to-https"
-    min_ttl                = 0
-    default_ttl            = 0
-    max_ttl                = 86400
-    compress               = true
-  }
-
-  price_class = var.cloudfront_price_class
-
-  restrictions {
-    geo_restriction {
-      restriction_type = "none"
-    }
-  }
-
-  viewer_certificate {
-    cloudfront_default_certificate = true
-  }
-
-  web_acl_id = var.waf_web_acl_arn
-
-  tags = {
-    Name = "${local.name_prefix}-botpress-cloudfront"
+    Name = "${local.name_prefix}-cloudfront"
   }
 }

@@ -41,3 +41,8 @@ variable "enable_logs_bucket" {
 variable "s3_versioning_enabled" {
   default = true
 }
+
+variable "enable_deployment_bucket" {
+  description = "Enable S3 bucket for CodeDeploy artifacts"
+  default     = true
+}

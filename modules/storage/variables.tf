@@ -77,3 +77,9 @@ variable "s3_versioning_enabled" {
   type        = bool
   default     = true
 }
+
+variable "enable_deployment_bucket" {
+  description = "Enable S3 bucket for CodeDeploy artifacts"
+  type        = bool
+  default     = true
+}

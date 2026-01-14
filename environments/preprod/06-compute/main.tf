@@ -31,6 +31,7 @@ provider "aws" {
       Environment = var.environment
       Project     = "Ajyal-LMS"
       ManagedBy   = "Terraform"
+      Team        = "Slashtec-DevOps"
       Module      = "compute"
     }
   }
@@ -87,9 +88,11 @@ module "compute" {
   vpc_id      = data.terraform_remote_state.vpc.outputs.vpc_id
 
   # Subnets
-  public_subnet_id      = data.terraform_remote_state.vpc.outputs.public_subnet_id
-  private_web_subnet_id = data.terraform_remote_state.vpc.outputs.private_web_subnet_id
-  private_app_subnet_id = data.terraform_remote_state.vpc.outputs.private_app_subnet_id
+  public_subnet_id       = data.terraform_remote_state.vpc.outputs.public_subnet_id
+  public_subnet_ids      = data.terraform_remote_state.vpc.outputs.public_subnet_ids
+  private_web_subnet_id  = data.terraform_remote_state.vpc.outputs.private_web_subnet_id
+  private_app_subnet_id  = data.terraform_remote_state.vpc.outputs.private_app_subnet_id
+  private_app_subnet_ids = data.terraform_remote_state.vpc.outputs.private_app_subnet_ids
 
   # Security Groups
   windows_security_group_id = data.terraform_remote_state.security.outputs.windows_server_security_group_id
@@ -211,14 +214,20 @@ output "rabbitmq_private_ip" {
   value       = module.compute.rabbitmq_private_ip
 }
 
+output "cloudfront_domain_name" {
+  description = "CloudFront distribution domain name (single distribution for all origins)"
+  value       = module.compute.cloudfront_domain_name
+}
+
+# Legacy outputs for backward compatibility
 output "app_cloudfront_domain_name" {
-  description = "App CloudFront distribution domain name"
-  value       = module.compute.app_cloudfront_domain_name
+  description = "CloudFront distribution domain name (legacy)"
+  value       = module.compute.cloudfront_domain_name
 }
 
 output "botpress_cloudfront_domain_name" {
-  description = "Botpress CloudFront distribution domain name"
-  value       = module.compute.botpress_cloudfront_domain_name
+  description = "CloudFront distribution domain name (legacy)"
+  value       = module.compute.cloudfront_domain_name
 }
 
 #------------------------------------------------------------------------------

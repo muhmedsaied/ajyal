@@ -30,6 +30,7 @@ provider "aws" {
       Environment = var.environment
       Project     = "Ajyal-LMS"
       ManagedBy   = "Terraform"
+      Team        = "Slashtec-DevOps"
       Module      = "vpc"
     }
   }
@@ -47,11 +48,13 @@ module "vpc" {
   availability_zone   = "${var.aws_region}a"
   availability_zone_2 = var.availability_zone_2
 
-  public_subnet_cidr    = var.public_subnet_cidr
-  private_web_cidr      = var.private_web_cidr
-  private_app_cidr      = var.private_app_cidr
-  private_data_cidr     = var.private_data_cidr
-  private_data_cidr_az2 = var.private_data_cidr_az2
+  public_subnet_cidr     = var.public_subnet_cidr
+  public_subnet_cidr_az2 = var.public_subnet_cidr_az2
+  private_web_cidr       = var.private_web_cidr
+  private_app_cidr       = var.private_app_cidr
+  private_app_cidr_az2   = var.private_app_cidr_az2
+  private_data_cidr      = var.private_data_cidr
+  private_data_cidr_az2  = var.private_data_cidr_az2
 
   enable_nat_gateway   = var.enable_nat_gateway
   enable_vpc_flow_logs = var.enable_vpc_flow_logs
@@ -73,12 +76,22 @@ output "public_subnet_id" {
   value = module.vpc.public_subnet_id
 }
 
+output "public_subnet_ids" {
+  description = "List of public subnet IDs for ALBs"
+  value       = module.vpc.public_subnet_ids
+}
+
 output "private_web_subnet_id" {
   value = module.vpc.private_web_subnet_id
 }
 
 output "private_app_subnet_id" {
   value = module.vpc.private_app_subnet_id
+}
+
+output "private_app_subnet_ids" {
+  description = "List of private app subnet IDs for internal ALBs"
+  value       = module.vpc.private_app_subnet_ids
 }
 
 output "private_data_subnet_id" {

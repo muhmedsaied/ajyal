@@ -42,8 +42,20 @@ variable "private_data_cidr_az2" {
   type        = string
 }
 
+variable "public_subnet_cidr_az2" {
+  description = "CIDR block for public subnet AZ2 - required for ALBs"
+  type        = string
+  default     = ""
+}
+
+variable "private_app_cidr_az2" {
+  description = "CIDR block for private app tier subnet AZ2 - required for internal ALBs"
+  type        = string
+  default     = ""
+}
+
 variable "availability_zone_2" {
-  description = "Second availability zone for multi-AZ resources (RDS)"
+  description = "Second availability zone for multi-AZ resources (RDS, ALB)"
   type        = string
   default     = ""
 }

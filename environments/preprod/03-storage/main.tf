@@ -31,6 +31,7 @@ provider "aws" {
       Environment = var.environment
       Project     = "Ajyal-LMS"
       ManagedBy   = "Terraform"
+      Team        = "Slashtec-DevOps"
       Module      = "storage"
     }
   }
@@ -75,9 +76,10 @@ module "storage" {
   ml_efs_size_gb      = var.ml_efs_size_gb
   efs_throughput_mode = var.efs_throughput_mode
 
-  enable_backup_bucket  = var.enable_backup_bucket
-  enable_logs_bucket    = var.enable_logs_bucket
-  s3_versioning_enabled = var.s3_versioning_enabled
+  enable_backup_bucket     = var.enable_backup_bucket
+  enable_logs_bucket       = var.enable_logs_bucket
+  enable_deployment_bucket = var.enable_deployment_bucket
+  s3_versioning_enabled    = var.s3_versioning_enabled
 
   kms_key_arn        = data.terraform_remote_state.security.outputs.kms_key_arn
   security_group_ids = [data.terraform_remote_state.security.outputs.efs_security_group_id]
@@ -117,4 +119,14 @@ output "logs_bucket_name" {
 
 output "artifact_bucket_name" {
   value = module.storage.artifact_bucket_name
+}
+
+output "deployment_bucket_name" {
+  description = "CodeDeploy deployment bucket name"
+  value       = module.storage.deployment_bucket_name
+}
+
+output "deployment_bucket_arn" {
+  description = "CodeDeploy deployment bucket ARN"
+  value       = module.storage.deployment_bucket_arn
 }

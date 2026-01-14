@@ -276,7 +276,7 @@ resource "aws_cloudwatch_metric_alarm" "app_alb_response_time" {
 
 # App ALB Unhealthy Hosts
 resource "aws_cloudwatch_metric_alarm" "app_alb_unhealthy" {
-  count               = var.enable_cloudwatch_alarms && var.app_target_group_arn_suffix != "" ? 1 : 0
+  count               = var.enable_cloudwatch_alarms && var.app_target_group_arn_suffix != "" && var.app_alb_arn_suffix != "" ? 1 : 0
   alarm_name          = "${local.name_prefix}-app-alb-unhealthy-hosts"
   comparison_operator = "GreaterThanThreshold"
   evaluation_periods  = 2
@@ -325,7 +325,7 @@ resource "aws_cloudwatch_metric_alarm" "api_alb_response_time" {
 
 # API ALB Unhealthy Hosts
 resource "aws_cloudwatch_metric_alarm" "api_alb_unhealthy" {
-  count               = var.enable_cloudwatch_alarms && var.api_target_group_arn_suffix != "" ? 1 : 0
+  count               = var.enable_cloudwatch_alarms && var.api_target_group_arn_suffix != "" && var.api_alb_arn_suffix != "" ? 1 : 0
   alarm_name          = "${local.name_prefix}-api-alb-unhealthy-hosts"
   comparison_operator = "GreaterThanThreshold"
   evaluation_periods  = 2

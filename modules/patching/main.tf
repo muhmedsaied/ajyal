@@ -222,6 +222,8 @@ resource "aws_ssm_maintenance_window_task" "windows_patch" {
   task_arn         = "AWS-RunPatchBaseline"
   priority         = 1
   service_role_arn = aws_iam_role.maintenance_window[0].arn
+  max_errors       = "1"
+  max_concurrency  = "2"
 
   targets {
     key    = "WindowTargetIds"
@@ -287,6 +289,8 @@ resource "aws_ssm_maintenance_window_task" "linux_patch" {
   task_arn         = "AWS-RunPatchBaseline"
   priority         = 1
   service_role_arn = aws_iam_role.maintenance_window[0].arn
+  max_errors       = "1"
+  max_concurrency  = "2"
 
   targets {
     key    = "WindowTargetIds"

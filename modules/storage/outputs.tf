@@ -56,3 +56,13 @@ output "artifact_bucket_name" {
   description = "Artifact bucket name (same as backup bucket)"
   value       = var.enable_backup_bucket ? aws_s3_bucket.backup[0].id : null
 }
+
+output "deployment_bucket_name" {
+  description = "Deployment S3 bucket name for CodeDeploy"
+  value       = var.enable_deployment_bucket ? aws_s3_bucket.deployment[0].id : null
+}
+
+output "deployment_bucket_arn" {
+  description = "Deployment S3 bucket ARN"
+  value       = var.enable_deployment_bucket ? aws_s3_bucket.deployment[0].arn : null
+}

@@ -16,7 +16,7 @@ variable "enable_mssql" {
 }
 
 variable "mssql_instance_class" {
-  default = "db.t3.xlarge" # Cost optimized
+  default = "db.t3.medium" # Reduced size for cost savings
 }
 
 variable "mssql_allocated_storage" {

@@ -13,8 +13,13 @@ output "vpc_cidr" {
 }
 
 output "public_subnet_id" {
-  description = "Public subnet ID"
+  description = "Public subnet ID (AZ1)"
   value       = aws_subnet.public.id
+}
+
+output "public_subnet_ids" {
+  description = "List of public subnet IDs for ALBs"
+  value       = var.public_subnet_cidr_az2 != "" ? [aws_subnet.public.id, aws_subnet.public_az2[0].id] : [aws_subnet.public.id]
 }
 
 output "private_web_subnet_id" {
@@ -23,8 +28,13 @@ output "private_web_subnet_id" {
 }
 
 output "private_app_subnet_id" {
-  description = "Private app tier subnet ID"
+  description = "Private app tier subnet ID (AZ1)"
   value       = aws_subnet.private_app.id
+}
+
+output "private_app_subnet_ids" {
+  description = "List of private app subnet IDs for internal ALBs"
+  value       = var.private_app_cidr_az2 != "" ? [aws_subnet.private_app.id, aws_subnet.private_app_az2[0].id] : [aws_subnet.private_app.id]
 }
 
 output "private_data_subnet_id" {

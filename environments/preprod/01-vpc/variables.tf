@@ -60,6 +60,16 @@ variable "private_data_cidr_az2" {
   default     = "10.40.64.0/20"
 }
 
+variable "public_subnet_cidr_az2" {
+  description = "Public subnet (AZ2) - Required for ALBs"
+  default     = "10.40.80.0/20"
+}
+
+variable "private_app_cidr_az2" {
+  description = "App tier (AZ2) - Required for internal ALBs"
+  default     = "10.40.96.0/20"
+}
+
 variable "availability_zone_2" {
   default = "eu-west-1b"
 }
@@ -69,5 +79,6 @@ variable "enable_nat_gateway" {
 }
 
 variable "enable_vpc_flow_logs" {
-  default = true
+  description = "Enable VPC Flow Logs (disabled for preprod to save costs)"
+  default     = false
 }

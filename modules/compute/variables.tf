@@ -17,6 +17,12 @@ variable "public_subnet_id" {
   type        = string
 }
 
+variable "public_subnet_ids" {
+  description = "List of public subnet IDs for ALBs (multi-AZ)"
+  type        = list(string)
+  default     = []
+}
+
 variable "private_web_subnet_id" {
   description = "Private web tier subnet ID"
   type        = string
@@ -25,6 +31,12 @@ variable "private_web_subnet_id" {
 variable "private_app_subnet_id" {
   description = "Private app tier subnet ID"
   type        = string
+}
+
+variable "private_app_subnet_ids" {
+  description = "List of private app subnet IDs for internal ALBs (multi-AZ)"
+  type        = list(string)
+  default     = []
 }
 
 variable "windows_security_group_id" {
@@ -284,4 +296,11 @@ variable "waf_web_acl_arn" {
   description = "WAF Web ACL ARN for CloudFront (optional)"
   type        = string
   default     = ""
+}
+
+variable "cloudfront_secret_header" {
+  description = "Secret header value to validate requests come from CloudFront"
+  type        = string
+  default     = "ajyal-cf-secret-2024"
+  sensitive   = true
 }
