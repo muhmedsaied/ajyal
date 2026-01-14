@@ -42,6 +42,10 @@ resource "aws_iam_role" "ec2_instance" {
 resource "aws_iam_instance_profile" "ec2" {
   name = "${local.name_prefix}-ec2-instance-profile"
   role = aws_iam_role.ec2_instance.name
+
+  tags = {
+    Name = "${local.name_prefix}-ec2-instance-profile"
+  }
 }
 
 # SSM Managed Instance Core (for patching and management)

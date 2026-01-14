@@ -12,14 +12,14 @@ locals {
 # Data Sources - AMIs
 #------------------------------------------------------------------------------
 
-# Windows Server 2022 AMI
+# Windows Server 2025 AMI
 data "aws_ami" "windows" {
   most_recent = true
   owners      = ["amazon"]
 
   filter {
     name   = "name"
-    values = ["Windows_Server-2022-English-Full-Base-*"]
+    values = ["Windows_Server-2025-English-Full-Base-*"]
   }
 
   filter {
@@ -1031,10 +1031,15 @@ CWCONFIG
   )
 
   tags = {
-    Name       = "${local.name_prefix}-rabbitmq"
-    PatchGroup = "${local.name_prefix}-linux"
-    Platform   = "Linux"
-    Service    = "RabbitMQ"
+    Name        = "${local.name_prefix}-rabbitmq"
+    PatchGroup  = "${local.name_prefix}-linux"
+    Platform    = "Linux"
+    Service     = "RabbitMQ"
+    Environment = var.environment
+    Project     = "Ajyal-LMS"
+    ManagedBy   = "Terraform"
+    Team        = "Slashtec-DevOps"
+    Module      = "compute"
   }
 }
 
@@ -1331,6 +1336,36 @@ resource "aws_autoscaling_group" "app" {
     value               = "${local.name_prefix}-app-server"
     propagate_at_launch = true
   }
+
+  tag {
+    key                 = "Environment"
+    value               = var.environment
+    propagate_at_launch = true
+  }
+
+  tag {
+    key                 = "Project"
+    value               = "Ajyal-LMS"
+    propagate_at_launch = true
+  }
+
+  tag {
+    key                 = "ManagedBy"
+    value               = "Terraform"
+    propagate_at_launch = true
+  }
+
+  tag {
+    key                 = "Team"
+    value               = "Slashtec-DevOps"
+    propagate_at_launch = true
+  }
+
+  tag {
+    key                 = "Module"
+    value               = "compute"
+    propagate_at_launch = true
+  }
 }
 
 # API Server ASG
@@ -1354,6 +1389,36 @@ resource "aws_autoscaling_group" "api" {
   tag {
     key                 = "Name"
     value               = "${local.name_prefix}-api-server"
+    propagate_at_launch = true
+  }
+
+  tag {
+    key                 = "Environment"
+    value               = var.environment
+    propagate_at_launch = true
+  }
+
+  tag {
+    key                 = "Project"
+    value               = "Ajyal-LMS"
+    propagate_at_launch = true
+  }
+
+  tag {
+    key                 = "ManagedBy"
+    value               = "Terraform"
+    propagate_at_launch = true
+  }
+
+  tag {
+    key                 = "Team"
+    value               = "Slashtec-DevOps"
+    propagate_at_launch = true
+  }
+
+  tag {
+    key                 = "Module"
+    value               = "compute"
     propagate_at_launch = true
   }
 }
@@ -1380,6 +1445,36 @@ resource "aws_autoscaling_group" "integration" {
     value               = "${local.name_prefix}-integration-server"
     propagate_at_launch = true
   }
+
+  tag {
+    key                 = "Environment"
+    value               = var.environment
+    propagate_at_launch = true
+  }
+
+  tag {
+    key                 = "Project"
+    value               = "Ajyal-LMS"
+    propagate_at_launch = true
+  }
+
+  tag {
+    key                 = "ManagedBy"
+    value               = "Terraform"
+    propagate_at_launch = true
+  }
+
+  tag {
+    key                 = "Team"
+    value               = "Slashtec-DevOps"
+    propagate_at_launch = true
+  }
+
+  tag {
+    key                 = "Module"
+    value               = "compute"
+    propagate_at_launch = true
+  }
 }
 
 # Logging Server ASG
@@ -1402,6 +1497,36 @@ resource "aws_autoscaling_group" "logging" {
   tag {
     key                 = "Name"
     value               = "${local.name_prefix}-logging-server"
+    propagate_at_launch = true
+  }
+
+  tag {
+    key                 = "Environment"
+    value               = var.environment
+    propagate_at_launch = true
+  }
+
+  tag {
+    key                 = "Project"
+    value               = "Ajyal-LMS"
+    propagate_at_launch = true
+  }
+
+  tag {
+    key                 = "ManagedBy"
+    value               = "Terraform"
+    propagate_at_launch = true
+  }
+
+  tag {
+    key                 = "Team"
+    value               = "Slashtec-DevOps"
+    propagate_at_launch = true
+  }
+
+  tag {
+    key                 = "Module"
+    value               = "compute"
     propagate_at_launch = true
   }
 }
@@ -1427,6 +1552,36 @@ resource "aws_autoscaling_group" "botpress" {
   tag {
     key                 = "Name"
     value               = "${local.name_prefix}-botpress"
+    propagate_at_launch = true
+  }
+
+  tag {
+    key                 = "Environment"
+    value               = var.environment
+    propagate_at_launch = true
+  }
+
+  tag {
+    key                 = "Project"
+    value               = "Ajyal-LMS"
+    propagate_at_launch = true
+  }
+
+  tag {
+    key                 = "ManagedBy"
+    value               = "Terraform"
+    propagate_at_launch = true
+  }
+
+  tag {
+    key                 = "Team"
+    value               = "Slashtec-DevOps"
+    propagate_at_launch = true
+  }
+
+  tag {
+    key                 = "Module"
+    value               = "compute"
     propagate_at_launch = true
   }
 }
@@ -1455,6 +1610,36 @@ resource "aws_autoscaling_group" "ml" {
     value               = "${local.name_prefix}-ml"
     propagate_at_launch = true
   }
+
+  tag {
+    key                 = "Environment"
+    value               = var.environment
+    propagate_at_launch = true
+  }
+
+  tag {
+    key                 = "Project"
+    value               = "Ajyal-LMS"
+    propagate_at_launch = true
+  }
+
+  tag {
+    key                 = "ManagedBy"
+    value               = "Terraform"
+    propagate_at_launch = true
+  }
+
+  tag {
+    key                 = "Team"
+    value               = "Slashtec-DevOps"
+    propagate_at_launch = true
+  }
+
+  tag {
+    key                 = "Module"
+    value               = "compute"
+    propagate_at_launch = true
+  }
 }
 
 # Content Server ASG
@@ -1477,6 +1662,36 @@ resource "aws_autoscaling_group" "content" {
   tag {
     key                 = "Name"
     value               = "${local.name_prefix}-content"
+    propagate_at_launch = true
+  }
+
+  tag {
+    key                 = "Environment"
+    value               = var.environment
+    propagate_at_launch = true
+  }
+
+  tag {
+    key                 = "Project"
+    value               = "Ajyal-LMS"
+    propagate_at_launch = true
+  }
+
+  tag {
+    key                 = "ManagedBy"
+    value               = "Terraform"
+    propagate_at_launch = true
+  }
+
+  tag {
+    key                 = "Team"
+    value               = "Slashtec-DevOps"
+    propagate_at_launch = true
+  }
+
+  tag {
+    key                 = "Module"
+    value               = "compute"
     propagate_at_launch = true
   }
 }
