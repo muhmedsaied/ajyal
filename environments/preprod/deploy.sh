@@ -32,6 +32,7 @@ MODULES=(
     "06-compute"
     "07-patching"
     "08-monitoring"
+    "09-budget"
 )
 
 # Get script directory
