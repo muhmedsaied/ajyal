@@ -86,3 +86,12 @@ variable "botpress_asg_name" {
   description = "Linux Botpress Auto Scaling Group name"
   default     = "" # Set after compute deployment
 }
+
+#------------------------------------------------------------------------------
+# Client Deployment User
+#------------------------------------------------------------------------------
+
+variable "enable_client_deploy_user" {
+  description = "Create IAM user for client to upload deployment artifacts"
+  default     = true
+}

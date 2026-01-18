@@ -56,6 +56,15 @@ data "terraform_remote_state" "storage" {
 # CI/CD Module
 #------------------------------------------------------------------------------
 
+data "terraform_remote_state" "security" {
+  backend = "s3"
+  config = {
+    bucket = "ajyal-preprod-terraform-state-946846709937"
+    key    = "preprod/security/terraform.tfstate"
+    region = "eu-west-1"
+  }
+}
+
 module "cicd" {
   source = "../../../modules/cicd"
 
@@ -75,8 +84,11 @@ module "cicd" {
   source_repository   = var.source_repository
   source_branch       = var.source_branch
 
-  # S3 Artifact Bucket (same region for fast access)
-  artifact_bucket_name = data.terraform_remote_state.storage.outputs.artifact_bucket_name
+  # S3 Deployment Bucket (same region for fast access)
+  artifact_bucket_name = data.terraform_remote_state.storage.outputs.deployment_bucket_name
+
+  # KMS Key for encryption
+  kms_key_arn = data.terraform_remote_state.security.outputs.kms_key_arn
 
   # Zero-Downtime Deployment - ALB Target Groups
   # (Set these after deploying compute module for zero-downtime deployments)
@@ -88,6 +100,9 @@ module "cicd" {
   app_asg_name      = var.app_asg_name
   api_asg_name      = var.api_asg_name
   botpress_asg_name = var.botpress_asg_name
+
+  # Client Deployment User
+  enable_client_deploy_user = var.enable_client_deploy_user
 }
 
 #------------------------------------------------------------------------------
@@ -116,4 +131,28 @@ output "codedeploy_linux_app_name" {
 
 output "codedeploy_role_arn" {
   value = module.cicd.codedeploy_role_arn
+}
+
+#------------------------------------------------------------------------------
+# Client Deployment Outputs
+#------------------------------------------------------------------------------
+
+output "deployment_bucket_name" {
+  description = "S3 bucket for deployment artifacts"
+  value       = data.terraform_remote_state.storage.outputs.deployment_bucket_name
+}
+
+output "client_deploy_user_name" {
+  description = "Client deployment IAM user name"
+  value       = module.cicd.client_deploy_user_name
+}
+
+output "client_deploy_user_arn" {
+  description = "Client deployment IAM user ARN"
+  value       = module.cicd.client_deploy_user_arn
+}
+
+output "client_deploy_policy_arn" {
+  description = "Client deployment IAM policy ARN"
+  value       = module.cicd.client_deploy_policy_arn
 }

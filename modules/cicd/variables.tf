@@ -98,3 +98,19 @@ variable "botpress_asg_name" {
   type        = string
   default     = ""
 }
+
+#------------------------------------------------------------------------------
+# Client Deployment User
+#------------------------------------------------------------------------------
+
+variable "enable_client_deploy_user" {
+  description = "Create IAM user for client deployment uploads"
+  type        = bool
+  default     = false
+}
+
+variable "kms_key_arn" {
+  description = "KMS key ARN for S3 encryption"
+  type        = string
+  default     = ""
+}

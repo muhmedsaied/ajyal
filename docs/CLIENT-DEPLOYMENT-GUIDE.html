@@ -1,0 +1,481 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Ajyal LMS - Deployment Artifact Upload Guide</title>
+    <style>
+        @page {
+            size: A4;
+            margin: 20mm 15mm 20mm 15mm;
+        }
+
+        * {
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            line-height: 1.6;
+            color: #333;
+            max-width: 210mm;
+            margin: 0 auto;
+            padding: 20px;
+            background: #fff;
+        }
+
+        .cover-page {
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            text-align: center;
+            page-break-after: always;
+            border: 3px solid #1a365d;
+            padding: 40px;
+            margin-bottom: 20px;
+        }
+
+        .cover-page .logo {
+            font-size: 48px;
+            font-weight: bold;
+            color: #1a365d;
+            margin-bottom: 10px;
+        }
+
+        .cover-page .title {
+            font-size: 32px;
+            color: #1a365d;
+            margin: 20px 0;
+            font-weight: bold;
+        }
+
+        .cover-page .subtitle {
+            font-size: 18px;
+            color: #4a5568;
+            margin-bottom: 40px;
+        }
+
+        .cover-page .meta {
+            margin-top: 60px;
+            font-size: 14px;
+            color: #718096;
+        }
+
+        .cover-page .meta p {
+            margin: 5px 0;
+        }
+
+        .cover-page .classification {
+            margin-top: 40px;
+            padding: 10px 30px;
+            background: #fed7d7;
+            color: #c53030;
+            font-weight: bold;
+            border-radius: 4px;
+        }
+
+        h1 {
+            color: #1a365d;
+            border-bottom: 3px solid #1a365d;
+            padding-bottom: 10px;
+            page-break-after: avoid;
+            margin-top: 40px;
+        }
+
+        h2 {
+            color: #2c5282;
+            border-bottom: 1px solid #bee3f8;
+            padding-bottom: 5px;
+            page-break-after: avoid;
+            margin-top: 30px;
+        }
+
+        h3 {
+            color: #2b6cb0;
+            page-break-after: avoid;
+            margin-top: 20px;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 15px 0;
+            font-size: 14px;
+            page-break-inside: avoid;
+        }
+
+        th {
+            background: #1a365d;
+            color: white;
+            padding: 12px 10px;
+            text-align: left;
+            font-weight: 600;
+        }
+
+        td {
+            padding: 10px;
+            border: 1px solid #e2e8f0;
+        }
+
+        tr:nth-child(even) {
+            background: #f7fafc;
+        }
+
+        code {
+            background: #edf2f7;
+            padding: 2px 8px;
+            border-radius: 4px;
+            font-family: 'Consolas', 'Monaco', monospace;
+            font-size: 13px;
+            color: #1a365d;
+            font-weight: 500;
+        }
+
+        pre {
+            background: #1a202c;
+            color: #e2e8f0;
+            padding: 20px;
+            border-radius: 8px;
+            overflow-x: auto;
+            font-size: 13px;
+            line-height: 1.6;
+            page-break-inside: avoid;
+        }
+
+        pre code {
+            background: none;
+            color: #e2e8f0;
+            padding: 0;
+        }
+
+        .page-break {
+            page-break-after: always;
+        }
+
+        .folder-structure {
+            background: #f7fafc;
+            border: 2px solid #e2e8f0;
+            padding: 25px;
+            border-radius: 8px;
+            font-family: 'Consolas', 'Monaco', monospace;
+            font-size: 14px;
+            white-space: pre;
+            overflow-x: auto;
+            line-height: 1.8;
+        }
+
+        .highlight-box {
+            background: #ebf8ff;
+            border: 2px solid #3182ce;
+            border-radius: 8px;
+            padding: 20px;
+            margin: 20px 0;
+        }
+
+        .highlight-box h3 {
+            margin-top: 0;
+            color: #2c5282;
+        }
+
+        .footer {
+            text-align: center;
+            padding: 30px;
+            border-top: 2px solid #1a365d;
+            margin-top: 40px;
+            color: #718096;
+            font-size: 12px;
+        }
+
+        .toc {
+            background: #f7fafc;
+            padding: 25px 35px;
+            border-radius: 8px;
+            margin: 30px 0;
+            border: 1px solid #e2e8f0;
+        }
+
+        .toc h2 {
+            border: none;
+            margin-top: 0;
+            margin-bottom: 15px;
+        }
+
+        .toc ol {
+            padding-left: 25px;
+            margin: 0;
+        }
+
+        .toc li {
+            margin: 10px 0;
+            font-size: 15px;
+        }
+
+        .toc a {
+            color: #2b6cb0;
+            text-decoration: none;
+        }
+
+        .bucket-name {
+            background: #1a365d;
+            color: white;
+            padding: 15px 25px;
+            border-radius: 8px;
+            font-family: 'Consolas', 'Monaco', monospace;
+            font-size: 16px;
+            text-align: center;
+            margin: 20px 0;
+        }
+
+        @media print {
+            body {
+                padding: 0;
+            }
+            .cover-page {
+                height: auto;
+                min-height: 100vh;
+            }
+            pre {
+                white-space: pre-wrap;
+                word-wrap: break-word;
+            }
+        }
+    </style>
+</head>
+<body>
+
+<!-- Cover Page -->
+<div class="cover-page">
+    <div class="logo">AJYAL LMS</div>
+    <div class="title">Deployment Artifact Upload Guide</div>
+    <div class="subtitle">S3 Bucket Access & Release Management</div>
+
+    <div class="meta">
+        <p><strong>Version:</strong> 1.0</p>
+        <p><strong>Date:</strong> January 2026</p>
+        <p><strong>Prepared By:</strong> Slashtec DevOps Team</p>
+    </div>
+
+    <div class="classification">CONFIDENTIAL</div>
+</div>
+
+<!-- Table of Contents -->
+<div class="toc">
+    <h2>Table of Contents</h2>
+    <ol>
+        <li><a href="#bucket-access">S3 Bucket Access Details</a></li>
+        <li><a href="#bucket-structure">Bucket Structure</a></li>
+        <li><a href="#versioning">Version Naming Convention</a></li>
+        <li><a href="#upload">How to Upload</a></li>
+    </ol>
+</div>
+
+<div class="page-break"></div>
+
+<!-- Section 1: S3 Bucket Access Details -->
+<h1 id="bucket-access">1. S3 Bucket Access Details</h1>
+
+<h2>1.1 Bucket Information</h2>
+
+<div class="bucket-name">
+    preprod-ajyal-deployments-946846709937
+</div>
+
+<table>
+    <tr><th>Property</th><th>Value</th></tr>
+    <tr><td><strong>Bucket Name</strong></td><td><code>preprod-ajyal-deployments-946846709937</code></td></tr>
+    <tr><td><strong>AWS Region</strong></td><td><code>eu-west-1</code> (Ireland)</td></tr>
+    <tr><td><strong>Encryption</strong></td><td>AWS KMS (Customer Managed Key)</td></tr>
+    <tr><td><strong>Versioning</strong></td><td>Enabled</td></tr>
+</table>
+
+<h2>1.2 IAM Credentials</h2>
+
+<table>
+    <tr><th>Property</th><th>Value</th></tr>
+    <tr><td><strong>IAM User Name</strong></td><td><code>preprod-ajyal-client-deploy</code></td></tr>
+    <tr><td><strong>Access Type</strong></td><td>Programmatic Access (Access Key ID + Secret Access Key)</td></tr>
+</table>
+
+<p><em>Credentials will be provided separately.</em></p>
+
+<h2>1.3 AWS CLI Configuration</h2>
+
+<p>Configure your AWS CLI profile:</p>
+
+<pre><code>aws configure --profile ajyal-deploy
+
+AWS Access Key ID [None]: &lt;YOUR_ACCESS_KEY_ID&gt;
+AWS Secret Access Key [None]: &lt;YOUR_SECRET_ACCESS_KEY&gt;
+Default region name [None]: eu-west-1
+Default output format [None]: json</code></pre>
+
+<p>Verify access:</p>
+
+<pre><code>aws s3 ls s3://preprod-ajyal-deployments-946846709937 --profile ajyal-deploy</code></pre>
+
+<div class="page-break"></div>
+
+<!-- Section 2: Bucket Structure -->
+<h1 id="bucket-structure">2. Bucket Structure</h1>
+
+<p>Upload deployment artifacts to the correct folder based on target server:</p>
+
+<div class="folder-structure">preprod-ajyal-deployments-946846709937/
+│
+├── windows/
+│   ├── app/                     [Main Application Server]
+│   │   ├── v1.0.0.zip
+│   │   ├── v1.0.1.zip
+│   │   └── v1.1.0.zip
+│   │
+│   ├── api/                     [REST API Server]
+│   │   ├── v1.0.0.zip
+│   │   └── v1.0.1.zip
+│   │
+│   ├── integration/             [Integration Server]
+│   │   └── v1.0.0.zip
+│   │
+│   └── logging/                 [Logging Server]
+│       └── v1.0.0.zip
+│
+└── linux/
+    ├── botpress/                [Chatbot Server]
+    │   ├── v1.0.0.tar.gz
+    │   └── v1.0.1.tar.gz
+    │
+    ├── ml/                      [Machine Learning Server]
+    │   └── v1.0.0.tar.gz
+    │
+    └── content/                 [Content Delivery Server]
+        └── v1.0.0.tar.gz</div>
+
+<h2>2.1 Server Reference</h2>
+
+<table>
+    <tr><th>Server</th><th>Platform</th><th>S3 Path</th><th>Format</th></tr>
+    <tr><td>Main Application</td><td>Windows</td><td><code>windows/app/</code></td><td><code>.zip</code></td></tr>
+    <tr><td>API Server</td><td>Windows</td><td><code>windows/api/</code></td><td><code>.zip</code></td></tr>
+    <tr><td>Integration Server</td><td>Windows</td><td><code>windows/integration/</code></td><td><code>.zip</code></td></tr>
+    <tr><td>Logging Server</td><td>Windows</td><td><code>windows/logging/</code></td><td><code>.zip</code></td></tr>
+    <tr><td>Botpress (Chatbot)</td><td>Linux</td><td><code>linux/botpress/</code></td><td><code>.tar.gz</code></td></tr>
+    <tr><td>ML Server</td><td>Linux</td><td><code>linux/ml/</code></td><td><code>.tar.gz</code></td></tr>
+    <tr><td>Content Server</td><td>Linux</td><td><code>linux/content/</code></td><td><code>.tar.gz</code></td></tr>
+</table>
+
+<div class="page-break"></div>
+
+<!-- Section 3: Version Naming Convention -->
+<h1 id="versioning">3. Version Naming Convention</h1>
+
+<h2>3.1 Semantic Versioning Format</h2>
+
+<div class="highlight-box">
+    <h3>Version Format</h3>
+    <code style="font-size: 18px; background: white; padding: 10px 20px;">v{MAJOR}.{MINOR}.{PATCH}[-{QUALIFIER}]</code>
+</div>
+
+<h2>3.2 Version Components</h2>
+
+<table>
+    <tr><th>Component</th><th>Description</th><th>Increment When</th></tr>
+    <tr><td><strong>MAJOR</strong></td><td>Major version</td><td>Breaking changes or major redesign</td></tr>
+    <tr><td><strong>MINOR</strong></td><td>Minor version</td><td>New features (backwards compatible)</td></tr>
+    <tr><td><strong>PATCH</strong></td><td>Patch version</td><td>Bug fixes (backwards compatible)</td></tr>
+    <tr><td><strong>QUALIFIER</strong></td><td>Optional suffix</td><td>Pre-release, build number, hotfix</td></tr>
+</table>
+
+<h2>3.3 Version Examples</h2>
+
+<table>
+    <tr><th>Version</th><th>Type</th><th>Description</th></tr>
+    <tr><td><code>v1.0.0</code></td><td>Initial</td><td>First production release</td></tr>
+    <tr><td><code>v1.0.1</code></td><td>Patch</td><td>Bug fix release</td></tr>
+    <tr><td><code>v1.1.0</code></td><td>Minor</td><td>New feature added</td></tr>
+    <tr><td><code>v2.0.0</code></td><td>Major</td><td>Breaking changes</td></tr>
+    <tr><td><code>v1.0.0-rc1</code></td><td>Pre-release</td><td>Release Candidate 1</td></tr>
+    <tr><td><code>v1.0.0-hotfix.1</code></td><td>Hotfix</td><td>Emergency fix</td></tr>
+    <tr><td><code>v1.2.3-build.456</code></td><td>Build</td><td>With CI build number</td></tr>
+</table>
+
+<h2>3.4 File Naming</h2>
+
+<table>
+    <tr><th>Platform</th><th>Format</th><th>Examples</th></tr>
+    <tr><td>Windows</td><td><code>v{VERSION}.zip</code></td><td><code>v1.0.0.zip</code>, <code>v1.2.3.zip</code>, <code>v2.0.0-rc1.zip</code></td></tr>
+    <tr><td>Linux</td><td><code>v{VERSION}.tar.gz</code></td><td><code>v1.0.0.tar.gz</code>, <code>v1.2.3.tar.gz</code>, <code>v2.0.0-rc1.tar.gz</code></td></tr>
+</table>
+
+<div class="page-break"></div>
+
+<!-- Section 4: How to Upload -->
+<h1 id="upload">4. How to Upload</h1>
+
+<h2>4.1 Using AWS CLI</h2>
+
+<h3>Upload Windows Package</h3>
+<pre><code># Upload to S3
+aws s3 cp your-package.zip \
+    s3://preprod-ajyal-deployments-946846709937/windows/app/v1.0.0.zip \
+    --profile ajyal-deploy
+
+# Verify upload
+aws s3 ls s3://preprod-ajyal-deployments-946846709937/windows/app/ \
+    --profile ajyal-deploy</code></pre>
+
+<h3>Upload Linux Package</h3>
+<pre><code># Upload to S3
+aws s3 cp your-package.tar.gz \
+    s3://preprod-ajyal-deployments-946846709937/linux/botpress/v1.0.0.tar.gz \
+    --profile ajyal-deploy
+
+# Verify upload
+aws s3 ls s3://preprod-ajyal-deployments-946846709937/linux/botpress/ \
+    --profile ajyal-deploy</code></pre>
+
+<h2>4.2 Using AWS Console</h2>
+
+<ol>
+    <li>Navigate to: <strong>https://console.aws.amazon.com/s3</strong></li>
+    <li>Select bucket: <code>preprod-ajyal-deployments-946846709937</code></li>
+    <li>Navigate to the appropriate folder (e.g., <code>windows/app/</code>)</li>
+    <li>Click <strong>Upload</strong></li>
+    <li>Select your package file</li>
+    <li>Click <strong>Upload</strong></li>
+</ol>
+
+<h2>4.3 Using GUI Tools</h2>
+
+<table>
+    <tr><th>Tool</th><th>Platform</th><th>Website</th></tr>
+    <tr><td>Cyberduck</td><td>Windows, Mac</td><td>cyberduck.io</td></tr>
+    <tr><td>S3 Browser</td><td>Windows</td><td>s3browser.com</td></tr>
+    <tr><td>CloudBerry</td><td>Windows, Mac</td><td>msp360.com</td></tr>
+</table>
+
+<p>Configuration:</p>
+<ul>
+    <li><strong>Access Key ID:</strong> Your provided access key</li>
+    <li><strong>Secret Access Key:</strong> Your provided secret key</li>
+    <li><strong>Region:</strong> eu-west-1</li>
+</ul>
+
+<h2>4.4 List Available Versions</h2>
+
+<pre><code># List all versions for a server
+aws s3 ls s3://preprod-ajyal-deployments-946846709937/windows/app/ --profile ajyal-deploy
+
+# Output example:
+# 2026-01-15 10:30:00    52428800 v1.0.0.zip
+# 2026-01-16 14:22:00    52430000 v1.0.1.zip
+# 2026-01-18 09:15:00    52450000 v1.1.0.zip</code></pre>
+
+<!-- Footer -->
+<div class="footer">
+    <p><strong>CONFIDENTIAL</strong></p>
+    <p>Ajyal LMS - Slashtec DevOps Team</p>
+</div>
+
+</body>
+</html>

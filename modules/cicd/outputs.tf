@@ -77,3 +77,22 @@ output "linux_content_deployment_group" {
   description = "Linux Content deployment group name"
   value       = var.enable_codedeploy ? aws_codedeploy_deployment_group.linux_content[0].deployment_group_name : null
 }
+
+#------------------------------------------------------------------------------
+# Client Deployment User Outputs
+#------------------------------------------------------------------------------
+
+output "client_deploy_user_name" {
+  description = "Client deployment IAM user name"
+  value       = var.enable_client_deploy_user ? aws_iam_user.client_deploy[0].name : null
+}
+
+output "client_deploy_user_arn" {
+  description = "Client deployment IAM user ARN"
+  value       = var.enable_client_deploy_user ? aws_iam_user.client_deploy[0].arn : null
+}
+
+output "client_deploy_policy_arn" {
+  description = "Client deployment IAM policy ARN"
+  value       = var.enable_client_deploy_user ? aws_iam_policy.client_deploy[0].arn : null
+}

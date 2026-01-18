@@ -495,6 +495,83 @@ resource "aws_iam_role_policy" "codepipeline" {
 }
 
 #------------------------------------------------------------------------------
+# Client Deployment User (for external uploads to S3)
+#------------------------------------------------------------------------------
+
+resource "aws_iam_user" "client_deploy" {
+  count = var.enable_client_deploy_user ? 1 : 0
+  name  = "${local.name_prefix}-client-deploy"
+  path  = "/deployment/"
+
+  tags = {
+    Name        = "${local.name_prefix}-client-deploy"
+    Purpose     = "Client deployment uploads"
+    Environment = var.environment
+  }
+}
+
+resource "aws_iam_policy" "client_deploy" {
+  count       = var.enable_client_deploy_user ? 1 : 0
+  name        = "${local.name_prefix}-client-deploy-policy"
+  description = "Policy for client to upload deployment artifacts to S3"
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Sid    = "ListDeploymentBucket"
+        Effect = "Allow"
+        Action = [
+          "s3:ListBucket",
+          "s3:GetBucketLocation",
+          "s3:GetBucketVersioning"
+        ]
+        Resource = "arn:aws:s3:::${var.artifact_bucket_name}"
+      },
+      {
+        Sid    = "UploadDeploymentArtifacts"
+        Effect = "Allow"
+        Action = [
+          "s3:PutObject",
+          "s3:GetObject",
+          "s3:GetObjectVersion",
+          "s3:DeleteObject",
+          "s3:ListMultipartUploadParts",
+          "s3:AbortMultipartUpload"
+        ]
+        Resource = "arn:aws:s3:::${var.artifact_bucket_name}/*"
+      },
+      {
+        Sid    = "KMSEncryptionForS3"
+        Effect = "Allow"
+        Action = [
+          "kms:Encrypt",
+          "kms:Decrypt",
+          "kms:GenerateDataKey",
+          "kms:DescribeKey"
+        ]
+        Resource = var.kms_key_arn != "" ? var.kms_key_arn : "*"
+        Condition = {
+          StringLike = {
+            "kms:ViaService" = "s3.${data.aws_region.current.name}.amazonaws.com"
+          }
+        }
+      }
+    ]
+  })
+
+  tags = {
+    Name = "${local.name_prefix}-client-deploy-policy"
+  }
+}
+
+resource "aws_iam_user_policy_attachment" "client_deploy" {
+  count      = var.enable_client_deploy_user ? 1 : 0
+  user       = aws_iam_user.client_deploy[0].name
+  policy_arn = aws_iam_policy.client_deploy[0].arn
+}
+
+#------------------------------------------------------------------------------
 # Data Sources
 #------------------------------------------------------------------------------
 
