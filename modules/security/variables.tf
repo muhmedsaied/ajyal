@@ -58,3 +58,15 @@ variable "enable_trend_micro" {
   type        = bool
   default     = true
 }
+
+variable "vpn_access_cidr_blocks" {
+  description = "CIDR blocks allowed to access servers via VPN"
+  type        = list(string)
+  default     = []
+}
+
+variable "enable_integration_nlb" {
+  description = "Enable security group rules for Integration NLB (allows public traffic on ports 80/443)"
+  type        = bool
+  default     = false
+}

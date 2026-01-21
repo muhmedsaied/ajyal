@@ -112,6 +112,14 @@ module "compute" {
   # CodeDeploy
   enable_codedeploy = var.enable_codedeploy
 
+  # Golden AMI
+  use_custom_windows_ami         = var.use_custom_windows_ami
+  custom_windows_ami_id          = var.custom_windows_ami_id
+  windows_key_name               = var.windows_key_name
+  windows_admin_password_secret_id = var.windows_admin_password_secret_id
+  install_prerequisites_on_launch = var.install_prerequisites_on_launch
+  prerequisites_s3_bucket        = var.prerequisites_s3_bucket
+
   # Windows Servers
   enable_app_servers       = var.enable_app_servers
   app_server_instance_type = var.app_server_instance_type
@@ -128,6 +136,7 @@ module "compute" {
   integration_server_instance_type = var.integration_server_instance_type
   integration_server_min_size      = var.integration_server_min_size
   integration_server_max_size      = var.integration_server_max_size
+  enable_integration_nlb           = var.enable_integration_nlb
 
   enable_logging_servers       = var.enable_logging_servers
   logging_server_instance_type = var.logging_server_instance_type
@@ -168,8 +177,33 @@ output "app_alb_dns_name" {
   value = module.compute.app_alb_dns_name
 }
 
+output "app_alb_arn" {
+  description = "App ALB ARN"
+  value       = module.compute.app_alb_arn
+}
+
 output "api_alb_dns_name" {
   value = module.compute.api_alb_dns_name
+}
+
+output "api_alb_arn" {
+  description = "API ALB ARN"
+  value       = module.compute.api_alb_arn
+}
+
+output "botpress_alb_arn" {
+  description = "Botpress ALB ARN"
+  value       = module.compute.botpress_alb_arn
+}
+
+output "app_target_group_name" {
+  description = "App target group name"
+  value       = module.compute.app_target_group_name
+}
+
+output "api_target_group_name" {
+  description = "API target group name"
+  value       = module.compute.api_target_group_name
 }
 
 output "botpress_alb_dns_name" {
@@ -187,6 +221,20 @@ output "api_asg_name" {
 output "integration_asg_name" {
   description = "Integration ASG name"
   value       = module.compute.integration_asg_name
+}
+
+#------------------------------------------------------------------------------
+# Integration NLB Outputs (Static IPs for client whitelisting)
+#------------------------------------------------------------------------------
+
+output "integration_nlb_dns_name" {
+  description = "Integration NLB DNS name"
+  value       = module.compute.integration_nlb_dns_name
+}
+
+output "integration_nlb_static_ips" {
+  description = "Integration NLB static Elastic IPs (for client whitelisting)"
+  value       = module.compute.integration_nlb_static_ips
 }
 
 output "logging_asg_name" {

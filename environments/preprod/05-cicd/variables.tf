@@ -14,6 +14,11 @@ variable "enable_codedeploy" {
   default = true
 }
 
+variable "enable_codedeploy_per_service" {
+  description = "Use per-service CodeDeploy apps for Windows API/Integration"
+  default     = true
+}
+
 variable "enable_codepipeline" {
   default = true
 }
@@ -82,6 +87,11 @@ variable "api_asg_name" {
   default     = "" # Set after compute deployment
 }
 
+variable "integration_asg_name" {
+  description = "Windows Integration Auto Scaling Group name"
+  default     = "" # Set after compute deployment
+}
+
 variable "botpress_asg_name" {
   description = "Linux Botpress Auto Scaling Group name"
   default     = "" # Set after compute deployment
@@ -94,4 +104,43 @@ variable "botpress_asg_name" {
 variable "enable_client_deploy_user" {
   description = "Create IAM user for client to upload deployment artifacts"
   default     = true
+}
+
+#------------------------------------------------------------------------------
+# CodeDeploy Bundler (S3 -> CodeDeploy-ready packages)
+#------------------------------------------------------------------------------
+
+variable "enable_codedeploy_bundler" {
+  description = "Enable S3-triggered CodeDeploy bundling for Windows uploads"
+  default     = true
+}
+
+variable "codedeploy_bundler_auto_deploy" {
+  description = "Trigger CodeDeploy deployments after bundling"
+  default     = true
+}
+
+variable "codedeploy_bundler_lambda_storage" {
+  description = "Lambda /tmp storage size (MB) for bundling"
+  default     = 2048
+}
+
+variable "codedeploy_bundler_api_allowed_names" {
+  description = "Restrict API uploads to these base filename patterns (glob)"
+  default     = []
+}
+
+variable "codedeploy_bundler_integration_allowed_names" {
+  description = "Restrict Integration uploads to these base filename patterns (glob)"
+  default     = []
+}
+
+variable "codedeploy_bundler_app_allowed_names" {
+  description = "Restrict App uploads to these base filename patterns (glob)"
+  default     = []
+}
+
+variable "codedeploy_bundler_ssm_kms_key_id" {
+  description = "Optional KMS key ID for SSM SecureString parameters"
+  default     = ""
 }

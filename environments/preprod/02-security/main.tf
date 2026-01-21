@@ -66,9 +66,13 @@ module "security" {
   enable_security_hub = var.enable_security_hub
   enable_config       = var.enable_config
   enable_trend_micro  = var.enable_trend_micro
+  vpn_access_cidr_blocks = var.vpn_access_cidr_blocks
 
   waf_rate_limit = var.waf_rate_limit
   waf_block_mode = var.waf_block_mode
+
+  # Integration NLB - allows public traffic on ports 80/443
+  enable_integration_nlb = var.enable_integration_nlb
 }
 
 #------------------------------------------------------------------------------

@@ -14,6 +14,10 @@ terraform {
       source  = "hashicorp/aws"
       version = "~> 5.0"
     }
+    archive = {
+      source  = "hashicorp/archive"
+      version = "~> 2.0"
+    }
   }
 
   backend "s3" {
@@ -65,15 +69,25 @@ data "terraform_remote_state" "security" {
   }
 }
 
+data "terraform_remote_state" "compute" {
+  backend = "s3"
+  config = {
+    bucket = "ajyal-preprod-terraform-state-946846709937"
+    key    = "preprod/compute/terraform.tfstate"
+    region = "eu-west-1"
+  }
+}
+
 module "cicd" {
   source = "../../../modules/cicd"
 
   environment = var.environment
 
   # CodeDeploy
-  enable_codedeploy           = var.enable_codedeploy
-  codedeploy_windows_app_name = "${var.environment}-windows-app"
-  codedeploy_linux_app_name   = "${var.environment}-linux-app"
+  enable_codedeploy             = var.enable_codedeploy
+  enable_codedeploy_per_service = var.enable_codedeploy_per_service
+  codedeploy_windows_app_name   = "${var.environment}-windows-app"
+  codedeploy_linux_app_name     = "${var.environment}-linux-app"
 
   # FAST DEPLOYMENT CONFIG
   deployment_config_name = var.deployment_config_name # AllAtOnce = fastest
@@ -92,17 +106,27 @@ module "cicd" {
 
   # Zero-Downtime Deployment - ALB Target Groups
   # (Set these after deploying compute module for zero-downtime deployments)
-  app_target_group_name      = var.app_target_group_name
-  api_target_group_name      = var.api_target_group_name
+  app_target_group_name      = var.app_target_group_name != "" ? var.app_target_group_name : try(data.terraform_remote_state.compute.outputs.app_target_group_name, "")
+  api_target_group_name      = var.api_target_group_name != "" ? var.api_target_group_name : try(data.terraform_remote_state.compute.outputs.api_target_group_name, "")
   botpress_target_group_name = var.botpress_target_group_name
 
   # ASG Integration for CodeDeploy
-  app_asg_name      = var.app_asg_name
-  api_asg_name      = var.api_asg_name
-  botpress_asg_name = var.botpress_asg_name
+  app_asg_name         = var.app_asg_name != "" ? var.app_asg_name : data.terraform_remote_state.compute.outputs.app_asg_name
+  api_asg_name         = var.api_asg_name != "" ? var.api_asg_name : data.terraform_remote_state.compute.outputs.api_asg_name
+  integration_asg_name = var.integration_asg_name != "" ? var.integration_asg_name : data.terraform_remote_state.compute.outputs.integration_asg_name
+  botpress_asg_name    = var.botpress_asg_name != "" ? var.botpress_asg_name : data.terraform_remote_state.compute.outputs.botpress_asg_name
 
   # Client Deployment User
   enable_client_deploy_user = var.enable_client_deploy_user
+
+  # CodeDeploy Bundler (S3 -> CodeDeploy-ready packages)
+  enable_codedeploy_bundler              = var.enable_codedeploy_bundler
+  codedeploy_bundler_auto_deploy          = var.codedeploy_bundler_auto_deploy
+  codedeploy_bundler_lambda_storage       = var.codedeploy_bundler_lambda_storage
+  codedeploy_bundler_api_allowed_names    = var.codedeploy_bundler_api_allowed_names
+  codedeploy_bundler_integration_allowed_names = var.codedeploy_bundler_integration_allowed_names
+  codedeploy_bundler_app_allowed_names    = var.codedeploy_bundler_app_allowed_names
+  codedeploy_bundler_ssm_kms_key_id        = var.codedeploy_bundler_ssm_kms_key_id
 }
 
 #------------------------------------------------------------------------------

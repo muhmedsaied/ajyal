@@ -12,6 +12,88 @@
 
 locals {
   name_prefix = "${var.environment}-ajyal"
+  bundler_kms_key_arns = distinct(compact([
+    var.kms_key_arn,
+    var.codedeploy_bundler_ssm_kms_key_id
+  ]))
+  bundler_api_config = {
+    template               = "api-server"
+    output_prefix          = var.codedeploy_bundler_api_output_prefix
+    deployment_group       = var.enable_codedeploy_per_service ? "" : try(aws_codedeploy_deployment_group.windows_api[0].deployment_group_name, "")
+    allowed_names          = var.codedeploy_bundler_api_allowed_names
+    bundle_all             = var.enable_codedeploy_per_service ? false : true
+    app_name_prefix        = var.enable_codedeploy_per_service ? "${local.name_prefix}-api" : ""
+    asg_name               = var.enable_codedeploy_per_service ? var.api_asg_name : ""
+    target_group_name      = var.enable_codedeploy_per_service ? var.api_target_group_name : ""
+    deployment_config_name = var.enable_codedeploy_per_service ? var.deployment_config_name : ""
+    auto_rollback          = var.enable_codedeploy_per_service ? var.enable_auto_rollback : false
+    ssm_base_path          = var.enable_codedeploy_per_service ? "/${local.name_prefix}/secrets/api-services" : ""
+    ssm_files              = []
+    seed_ssm               = var.enable_codedeploy_per_service ? true : false
+  }
+  bundler_integration_config = {
+    template               = "integration-server"
+    output_prefix          = var.codedeploy_bundler_integration_output_prefix
+    deployment_group       = var.enable_codedeploy_per_service ? "" : try(aws_codedeploy_deployment_group.windows_integration[0].deployment_group_name, "")
+    allowed_names          = var.codedeploy_bundler_integration_allowed_names
+    bundle_all             = var.enable_codedeploy_per_service ? false : true
+    app_name_prefix        = var.enable_codedeploy_per_service ? "${local.name_prefix}-integration" : ""
+    asg_name               = var.enable_codedeploy_per_service ? var.integration_asg_name : ""
+    target_group_name      = ""
+    deployment_config_name = var.enable_codedeploy_per_service ? var.deployment_config_name : ""
+    auto_rollback          = var.enable_codedeploy_per_service ? var.enable_auto_rollback : false
+    ssm_base_path          = var.enable_codedeploy_per_service ? "/${local.name_prefix}/secrets/integration-services" : ""
+    ssm_files              = []
+    seed_ssm               = var.enable_codedeploy_per_service ? true : false
+  }
+  bundler_app_config = {
+    template               = "app-server"
+    output_prefix          = var.codedeploy_bundler_app_output_prefix
+    deployment_group       = var.enable_codedeploy_per_service ? "" : try(aws_codedeploy_deployment_group.windows_app[0].deployment_group_name, "")
+    allowed_names          = var.codedeploy_bundler_app_allowed_names
+    bundle_all             = var.enable_codedeploy_per_service ? false : true
+    app_name_prefix        = var.enable_codedeploy_per_service ? "${local.name_prefix}-app" : ""
+    asg_name               = var.enable_codedeploy_per_service ? var.app_asg_name : ""
+    target_group_name      = var.enable_codedeploy_per_service ? var.app_target_group_name : ""
+    deployment_config_name = var.enable_codedeploy_per_service ? var.deployment_config_name : ""
+    auto_rollback          = var.enable_codedeploy_per_service ? var.enable_auto_rollback : false
+    ssm_base_path          = var.enable_codedeploy_per_service ? "/${local.name_prefix}/secrets/app-server" : ""
+    ssm_files              = var.enable_codedeploy_per_service ? ["web.config", "SystemSettings.xml", "App_GlobalResources/Configuration.resx", "PublishedServices.json"] : []
+    seed_ssm               = false
+  }
+  bundler_prefix_config = var.enable_codedeploy_bundler ? tomap({
+    "${var.codedeploy_bundler_api_prefix}"         = local.bundler_api_config
+    "${var.codedeploy_bundler_integration_prefix}" = local.bundler_integration_config
+    "${var.codedeploy_bundler_app_prefix}"         = local.bundler_app_config
+  }) : tomap({})
+  bundler_kms_statement = length(local.bundler_kms_key_arns) > 0 ? [
+    for key_arn in local.bundler_kms_key_arns : {
+      Effect = "Allow"
+      Action = [
+        "kms:Decrypt",
+        "kms:Encrypt",
+        "kms:GenerateDataKey",
+        "kms:DescribeKey"
+      ]
+      Resource = key_arn
+    }
+  ] : []
+  codedeploy_kms_statement = var.kms_key_arn != "" ? [
+    {
+      Effect = "Allow"
+      Action = [
+        "kms:Decrypt",
+        "kms:GenerateDataKey",
+        "kms:DescribeKey"
+      ]
+      Resource = var.kms_key_arn
+      Condition = {
+        StringLike = {
+          "kms:ViaService" = "s3.${data.aws_region.current.name}.amazonaws.com"
+        }
+      }
+    }
+  ] : []
 }
 
 #------------------------------------------------------------------------------
@@ -90,20 +172,23 @@ resource "aws_iam_role_policy" "codedeploy_s3" {
 
   policy = jsonencode({
     Version = "2012-10-17"
-    Statement = [
-      {
-        Effect = "Allow"
-        Action = [
-          "s3:Get*",
-          "s3:List*"
-        ]
-        Resource = [
-          "arn:aws:s3:::${var.artifact_bucket_name}",
-          "arn:aws:s3:::${var.artifact_bucket_name}/*",
-          "arn:aws:s3:::aws-codedeploy-${data.aws_region.current.name}/*"
-        ]
-      }
-    ]
+    Statement = concat(
+      [
+        {
+          Effect = "Allow"
+          Action = [
+            "s3:Get*",
+            "s3:List*"
+          ]
+          Resource = [
+            "arn:aws:s3:::${var.artifact_bucket_name}",
+            "arn:aws:s3:::${var.artifact_bucket_name}/*",
+            "arn:aws:s3:::aws-codedeploy-${data.aws_region.current.name}/*"
+          ]
+        }
+      ],
+      local.codedeploy_kms_statement
+    )
   })
 }
 
@@ -144,7 +229,7 @@ resource "aws_iam_role_policy_attachment" "codedeploy" {
 #------------------------------------------------------------------------------
 
 resource "aws_codedeploy_app" "windows" {
-  count            = var.enable_codedeploy ? 1 : 0
+  count            = var.enable_codedeploy && !var.enable_codedeploy_per_service ? 1 : 0
   name             = var.codedeploy_windows_app_name
   compute_platform = "Server"
 
@@ -160,7 +245,7 @@ resource "aws_codedeploy_app" "windows" {
 
 # App Servers - with ALB integration for zero-downtime
 resource "aws_codedeploy_deployment_group" "windows_app" {
-  count                  = var.enable_codedeploy ? 1 : 0
+  count                  = var.enable_codedeploy && !var.enable_codedeploy_per_service ? 1 : 0
   app_name               = aws_codedeploy_app.windows[0].name
   deployment_group_name  = "${local.name_prefix}-windows-app-dg"
   service_role_arn       = aws_iam_role.codedeploy[0].arn
@@ -207,7 +292,7 @@ resource "aws_codedeploy_deployment_group" "windows_app" {
 
 # API Servers - with ALB integration for zero-downtime
 resource "aws_codedeploy_deployment_group" "windows_api" {
-  count                  = var.enable_codedeploy ? 1 : 0
+  count                  = var.enable_codedeploy && !var.enable_codedeploy_per_service ? 1 : 0
   app_name               = aws_codedeploy_app.windows[0].name
   deployment_group_name  = "${local.name_prefix}-windows-api-dg"
   service_role_arn       = aws_iam_role.codedeploy[0].arn
@@ -249,7 +334,7 @@ resource "aws_codedeploy_deployment_group" "windows_api" {
 
 # Integration Servers
 resource "aws_codedeploy_deployment_group" "windows_integration" {
-  count                  = var.enable_codedeploy ? 1 : 0
+  count                  = var.enable_codedeploy && !var.enable_codedeploy_per_service ? 1 : 0
   app_name               = aws_codedeploy_app.windows[0].name
   deployment_group_name  = "${local.name_prefix}-windows-integration-dg"
   service_role_arn       = aws_iam_role.codedeploy[0].arn
@@ -262,6 +347,8 @@ resource "aws_codedeploy_deployment_group" "windows_integration" {
       value = "windows-integration"
     }
   }
+
+  autoscaling_groups = var.integration_asg_name != "" ? [var.integration_asg_name] : []
 
   deployment_style {
     deployment_option = "WITHOUT_TRAFFIC_CONTROL"
@@ -280,7 +367,7 @@ resource "aws_codedeploy_deployment_group" "windows_integration" {
 
 # Logging Servers
 resource "aws_codedeploy_deployment_group" "windows_logging" {
-  count                  = var.enable_codedeploy ? 1 : 0
+  count                  = var.enable_codedeploy && !var.enable_codedeploy_per_service ? 1 : 0
   app_name               = aws_codedeploy_app.windows[0].name
   deployment_group_name  = "${local.name_prefix}-windows-logging-dg"
   service_role_arn       = aws_iam_role.codedeploy[0].arn
@@ -314,7 +401,7 @@ resource "aws_codedeploy_deployment_group" "windows_logging" {
 #------------------------------------------------------------------------------
 
 resource "aws_codedeploy_app" "linux" {
-  count            = var.enable_codedeploy ? 1 : 0
+  count            = var.enable_codedeploy && !var.enable_codedeploy_per_service ? 1 : 0
   name             = var.codedeploy_linux_app_name
   compute_platform = "Server"
 
@@ -331,7 +418,7 @@ resource "aws_codedeploy_app" "linux" {
 # RabbitMQ - No CodeDeploy (single instance service, managed separately)
 
 resource "aws_codedeploy_deployment_group" "linux_botpress" {
-  count                  = var.enable_codedeploy ? 1 : 0
+  count                  = var.enable_codedeploy && !var.enable_codedeploy_per_service ? 1 : 0
   app_name               = aws_codedeploy_app.linux[0].name
   deployment_group_name  = "${local.name_prefix}-linux-botpress-dg"
   service_role_arn       = aws_iam_role.codedeploy[0].arn
@@ -372,7 +459,7 @@ resource "aws_codedeploy_deployment_group" "linux_botpress" {
 }
 
 resource "aws_codedeploy_deployment_group" "linux_ml" {
-  count                  = var.enable_codedeploy ? 1 : 0
+  count                  = var.enable_codedeploy && !var.enable_codedeploy_per_service ? 1 : 0
   app_name               = aws_codedeploy_app.linux[0].name
   deployment_group_name  = "${local.name_prefix}-linux-ml-dg"
   service_role_arn       = aws_iam_role.codedeploy[0].arn
@@ -402,7 +489,7 @@ resource "aws_codedeploy_deployment_group" "linux_ml" {
 }
 
 resource "aws_codedeploy_deployment_group" "linux_content" {
-  count                  = var.enable_codedeploy ? 1 : 0
+  count                  = var.enable_codedeploy && !var.enable_codedeploy_per_service ? 1 : 0
   app_name               = aws_codedeploy_app.linux[0].name
   deployment_group_name  = "${local.name_prefix}-linux-content-dg"
   service_role_arn       = aws_iam_role.codedeploy[0].arn
@@ -495,6 +582,181 @@ resource "aws_iam_role_policy" "codepipeline" {
 }
 
 #------------------------------------------------------------------------------
+# CodeDeploy Bundle Builder (S3-triggered Lambda)
+#------------------------------------------------------------------------------
+
+data "archive_file" "codedeploy_bundler" {
+  count       = var.enable_codedeploy_bundler ? 1 : 0
+  type        = "zip"
+  source_dir  = "${path.module}/lambda/deploy-bundler"
+  output_path = "${path.root}/.terraform/codedeploy-bundler.zip"
+}
+
+resource "aws_iam_role" "codedeploy_bundler" {
+  count = var.enable_codedeploy_bundler ? 1 : 0
+  name  = "${local.name_prefix}-codedeploy-bundler-role"
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Action = "sts:AssumeRole"
+        Effect = "Allow"
+        Principal = {
+          Service = "lambda.amazonaws.com"
+        }
+      }
+    ]
+  })
+
+  tags = {
+    Name = "${local.name_prefix}-codedeploy-bundler-role"
+  }
+}
+
+resource "aws_iam_role_policy" "codedeploy_bundler" {
+  count = var.enable_codedeploy_bundler ? 1 : 0
+  name  = "${local.name_prefix}-codedeploy-bundler-policy"
+  role  = aws_iam_role.codedeploy_bundler[0].id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = concat(
+      [
+        {
+          Effect = "Allow"
+          Action = [
+            "logs:CreateLogGroup",
+            "logs:CreateLogStream",
+            "logs:PutLogEvents"
+          ]
+          Resource = "arn:aws:logs:${data.aws_region.current.name}:*:log-group:/aws/lambda/${local.name_prefix}-codedeploy-bundler*:*"
+        },
+        {
+          Effect = "Allow"
+          Action = [
+            "s3:GetObject",
+            "s3:GetObjectVersion",
+            "s3:PutObject",
+            "s3:ListBucket"
+          ]
+          Resource = [
+            "arn:aws:s3:::${var.artifact_bucket_name}",
+            "arn:aws:s3:::${var.artifact_bucket_name}/*"
+          ]
+        },
+        {
+          Effect = "Allow"
+          Action = [
+            "codedeploy:CreateDeployment",
+            "codedeploy:CreateApplication",
+            "codedeploy:CreateDeploymentGroup",
+            "codedeploy:GetApplicationRevision",
+            "codedeploy:RegisterApplicationRevision",
+            "codedeploy:GetApplication",
+            "codedeploy:GetDeployment",
+            "codedeploy:GetDeploymentConfig",
+            "codedeploy:GetDeploymentGroup",
+            "codedeploy:UpdateDeploymentGroup"
+          ]
+          Resource = "*"
+        },
+        {
+          Effect = "Allow"
+          Action = [
+            "ssm:PutParameter"
+          ]
+          Resource = "arn:aws:ssm:${data.aws_region.current.name}:${data.aws_caller_identity.current.account_id}:parameter/${local.name_prefix}/secrets/*"
+        },
+        {
+          Effect = "Allow"
+          Action = [
+            "iam:PassRole"
+          ]
+          Resource = try(aws_iam_role.codedeploy[0].arn, "*")
+        }
+      ],
+      local.bundler_kms_statement
+    )
+  })
+}
+
+resource "aws_cloudwatch_log_group" "codedeploy_bundler" {
+  count             = var.enable_codedeploy_bundler ? 1 : 0
+  name              = "/aws/lambda/${local.name_prefix}-codedeploy-bundler"
+  retention_in_days = var.codedeploy_bundler_log_retention_days
+}
+
+resource "aws_lambda_function" "codedeploy_bundler" {
+  count         = var.enable_codedeploy_bundler ? 1 : 0
+  function_name = "${local.name_prefix}-codedeploy-bundler"
+  role          = aws_iam_role.codedeploy_bundler[0].arn
+  handler       = "handler.handler"
+  runtime       = "python3.11"
+  timeout       = var.codedeploy_bundler_lambda_timeout
+  memory_size   = var.codedeploy_bundler_lambda_memory
+  ephemeral_storage {
+    size = var.codedeploy_bundler_lambda_storage
+  }
+
+  filename         = data.archive_file.codedeploy_bundler[0].output_path
+  source_code_hash = data.archive_file.codedeploy_bundler[0].output_base64sha256
+
+  environment {
+    variables = {
+      PREFIX_CONFIG              = jsonencode(local.bundler_prefix_config)
+      AUTO_DEPLOY                = var.codedeploy_bundler_auto_deploy ? "true" : "false"
+      CODEDEPLOY_APP_NAME        = var.codedeploy_windows_app_name
+      CODEDEPLOY_SERVICE_ROLE_ARN = try(aws_iam_role.codedeploy[0].arn, "")
+      DEFAULT_DEPLOYMENT_CONFIG  = var.deployment_config_name
+      DEFAULT_AUTO_ROLLBACK      = var.enable_auto_rollback ? "true" : "false"
+      SSM_KMS_KEY_ID             = var.codedeploy_bundler_ssm_kms_key_id
+      KMS_KEY_ARN                = var.kms_key_arn
+      LOG_LEVEL                  = "INFO"
+    }
+  }
+
+  depends_on = [aws_cloudwatch_log_group.codedeploy_bundler]
+}
+
+resource "aws_lambda_permission" "codedeploy_bundler_s3" {
+  count         = var.enable_codedeploy_bundler ? 1 : 0
+  statement_id  = "AllowS3InvokeCodeDeployBundler"
+  action        = "lambda:InvokeFunction"
+  function_name = aws_lambda_function.codedeploy_bundler[0].arn
+  principal     = "s3.amazonaws.com"
+  source_arn    = "arn:aws:s3:::${var.artifact_bucket_name}"
+}
+
+resource "aws_s3_bucket_notification" "codedeploy_bundler" {
+  count  = var.enable_codedeploy_bundler ? 1 : 0
+  bucket = var.artifact_bucket_name
+
+  lambda_function {
+    lambda_function_arn = aws_lambda_function.codedeploy_bundler[0].arn
+    events              = ["s3:ObjectCreated:*"]
+    filter_prefix       = var.codedeploy_bundler_api_prefix
+    filter_suffix       = ".zip"
+  }
+
+  lambda_function {
+    lambda_function_arn = aws_lambda_function.codedeploy_bundler[0].arn
+    events              = ["s3:ObjectCreated:*"]
+    filter_prefix       = var.codedeploy_bundler_integration_prefix
+    filter_suffix       = ".zip"
+  }
+
+  lambda_function {
+    lambda_function_arn = aws_lambda_function.codedeploy_bundler[0].arn
+    events              = ["s3:ObjectCreated:*"]
+    filter_prefix       = var.codedeploy_bundler_app_prefix
+    filter_suffix       = ".zip"
+  }
+
+  depends_on = [aws_lambda_permission.codedeploy_bundler_s3]
+}
+
+#------------------------------------------------------------------------------
 # Client Deployment User (for external uploads to S3)
 #------------------------------------------------------------------------------
 
@@ -576,3 +838,5 @@ resource "aws_iam_user_policy_attachment" "client_deploy" {
 #------------------------------------------------------------------------------
 
 data "aws_region" "current" {}
+
+data "aws_caller_identity" "current" {}

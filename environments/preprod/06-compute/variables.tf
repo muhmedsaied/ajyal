@@ -31,7 +31,7 @@ variable "app_server_min_size" {
 }
 
 variable "app_server_max_size" {
-  default = 2
+  default = 1
 }
 
 variable "app_server_desired_size" {
@@ -47,7 +47,7 @@ variable "api_server_instance_type" {
 }
 
 variable "api_server_min_size" {
-  default = 1
+  default = 2
 }
 
 variable "api_server_max_size" {
@@ -63,11 +63,16 @@ variable "integration_server_instance_type" {
 }
 
 variable "integration_server_min_size" {
-  default = 1
+  default = 2
 }
 
 variable "integration_server_max_size" {
   default = 2
+}
+
+variable "enable_integration_nlb" {
+  description = "Enable Network Load Balancer with static IPs for Integration Servers"
+  default     = true
 }
 
 variable "enable_logging_servers" {
@@ -79,11 +84,39 @@ variable "logging_server_instance_type" {
 }
 
 variable "logging_server_min_size" {
-  default = 1
+  default = 0
 }
 
 variable "logging_server_max_size" {
-  default = 1
+  default = 0
+}
+
+#------------------------------------------------------------------------------
+# Custom AMI Support (Golden Image)
+#------------------------------------------------------------------------------
+
+variable "use_custom_windows_ami" {
+  default = true
+}
+
+variable "custom_windows_ami_id" {
+  default = "ami-09b0bf2ddf943f4d6"  # Golden AMI with IIS, ASP.NET 4.5, URL Rewrite, WebSockets (2026-01-21)
+}
+
+variable "windows_key_name" {
+  default = "preprod-ajyal-rdp"
+}
+
+variable "windows_admin_password_secret_id" {
+  default = "preprod-ajyal/windows/admin-password"
+}
+
+variable "install_prerequisites_on_launch" {
+  default = false
+}
+
+variable "prerequisites_s3_bucket" {
+  default = ""
 }
 
 #------------------------------------------------------------------------------
@@ -108,11 +141,11 @@ variable "botpress_instance_type" {
 }
 
 variable "botpress_min_size" {
-  default = 1
+  default = 0
 }
 
 variable "botpress_max_size" {
-  default = 1
+  default = 0
 }
 
 variable "enable_ml_servers" {
@@ -124,11 +157,11 @@ variable "ml_server_instance_type" {
 }
 
 variable "ml_server_min_size" {
-  default = 1
+  default = 0
 }
 
 variable "ml_server_max_size" {
-  default = 1
+  default = 0
 }
 
 variable "enable_content_servers" {
@@ -140,11 +173,11 @@ variable "content_server_instance_type" {
 }
 
 variable "content_server_min_size" {
-  default = 1
+  default = 0
 }
 
 variable "content_server_max_size" {
-  default = 2
+  default = 0
 }
 
 #------------------------------------------------------------------------------

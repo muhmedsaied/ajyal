@@ -163,6 +163,12 @@ variable "integration_server_max_size" {
   default     = 10
 }
 
+variable "enable_integration_nlb" {
+  description = "Enable Network Load Balancer with static IPs for Integration Servers (for client whitelisting)"
+  type        = bool
+  default     = false
+}
+
 # Windows Logging Servers
 variable "enable_logging_servers" {
   description = "Enable Logging Servers"
@@ -303,4 +309,60 @@ variable "cloudfront_secret_header" {
   type        = string
   default     = "ajyal-cf-secret-2024"
   sensitive   = true
+}
+
+#------------------------------------------------------------------------------
+# Custom AMI Support
+# Use custom AMIs with prerequisites pre-installed instead of base Windows AMI
+#------------------------------------------------------------------------------
+
+variable "use_custom_windows_ami" {
+  description = "Use custom Windows AMI with prerequisites pre-installed"
+  type        = bool
+  default     = false
+}
+
+variable "custom_windows_ami_id" {
+  description = "Custom Windows AMI ID (must have IIS, .NET 6/8/9, CodeDeploy, CloudWatch pre-installed)"
+  type        = string
+  default     = ""
+}
+
+variable "windows_key_name" {
+  description = "EC2 key pair name for Windows instances (RDP password retrieval)"
+  type        = string
+  default     = ""
+}
+
+variable "windows_admin_password_secret_id" {
+  description = "Secrets Manager secret ID (name or ARN) for Windows Administrator password. If empty, password is not set."
+  type        = string
+  default     = ""
+}
+
+variable "install_prerequisites_on_launch" {
+  description = "Run prerequisites installation script on launch (use when not using custom AMI)"
+  type        = bool
+  default     = true
+}
+
+variable "prerequisites_s3_bucket" {
+  description = "S3 bucket containing prerequisites installation scripts and tools"
+  type        = string
+  default     = ""
+}
+
+#------------------------------------------------------------------------------
+# CloudWatch Agent Configuration Source
+#------------------------------------------------------------------------------
+
+variable "cloudwatch_config_source" {
+  description = "Source for CloudWatch agent configuration: 'ssm' (SSM Parameter Store) or 'inline' (embedded in user-data)"
+  type        = string
+  default     = "ssm"
+
+  validation {
+    condition     = contains(["ssm", "inline"], var.cloudwatch_config_source)
+    error_message = "cloudwatch_config_source must be 'ssm' or 'inline'"
+  }
 }

@@ -2,24 +2,25 @@
 # Compute Module Outputs
 ###############################################################################
 
+# App ALB removed - outputs return null for backward compatibility
 output "app_alb_dns_name" {
-  description = "App ALB DNS name"
-  value       = var.enable_app_servers ? aws_lb.app[0].dns_name : null
+  description = "App ALB DNS name (removed)"
+  value       = null
 }
 
 output "app_alb_arn" {
-  description = "App ALB ARN"
-  value       = var.enable_app_servers ? aws_lb.app[0].arn : null
+  description = "App ALB ARN (removed)"
+  value       = null
 }
 
 output "app_target_group_name" {
-  description = "App target group name"
-  value       = var.enable_app_servers ? aws_lb_target_group.app[0].name : null
+  description = "App target group name (removed)"
+  value       = null
 }
 
 output "app_target_group_arn" {
-  description = "App target group ARN"
-  value       = var.enable_app_servers ? aws_lb_target_group.app[0].arn : null
+  description = "App target group ARN (removed)"
+  value       = null
 }
 
 output "api_alb_dns_name" {
@@ -50,6 +51,11 @@ output "botpress_alb_dns_name" {
 output "botpress_alb_arn" {
   description = "Botpress ALB ARN"
   value       = var.enable_botpress_servers ? aws_lb.botpress[0].arn : null
+}
+
+output "botpress_target_group_name" {
+  description = "Botpress target group name"
+  value       = var.enable_botpress_servers ? aws_lb_target_group.botpress[0].name : null
 }
 
 output "app_asg_name" {
@@ -92,6 +98,30 @@ output "integration_asg_name" {
   value       = var.enable_integration_servers ? aws_autoscaling_group.integration[0].name : null
 }
 
+#------------------------------------------------------------------------------
+# Integration NLB Outputs (Static IPs for client whitelisting)
+#------------------------------------------------------------------------------
+
+output "integration_nlb_dns_name" {
+  description = "Integration NLB DNS name"
+  value       = var.enable_integration_nlb ? aws_lb.integration[0].dns_name : null
+}
+
+output "integration_nlb_arn" {
+  description = "Integration NLB ARN"
+  value       = var.enable_integration_nlb ? aws_lb.integration[0].arn : null
+}
+
+output "integration_nlb_static_ips" {
+  description = "Integration NLB static Elastic IPs (for client whitelisting)"
+  value       = var.enable_integration_nlb ? aws_eip.integration_nlb[*].public_ip : []
+}
+
+output "integration_nlb_eip_allocation_ids" {
+  description = "Integration NLB Elastic IP allocation IDs"
+  value       = var.enable_integration_nlb ? aws_eip.integration_nlb[*].allocation_id : []
+}
+
 output "logging_asg_name" {
   description = "Logging ASG name"
   value       = var.enable_logging_servers ? aws_autoscaling_group.logging[0].name : null
@@ -103,23 +133,23 @@ output "logging_asg_name" {
 
 output "cloudfront_domain_name" {
   description = "CloudFront distribution domain name"
-  value       = var.enable_cloudfront ? aws_cloudfront_distribution.main[0].domain_name : null
+  value       = var.enable_cloudfront && var.enable_botpress_servers ? aws_cloudfront_distribution.main[0].domain_name : null
 }
 
 output "cloudfront_id" {
   description = "CloudFront distribution ID"
-  value       = var.enable_cloudfront ? aws_cloudfront_distribution.main[0].id : null
+  value       = var.enable_cloudfront && var.enable_botpress_servers ? aws_cloudfront_distribution.main[0].id : null
 }
 
 # Legacy outputs for backward compatibility
 output "app_cloudfront_domain_name" {
   description = "CloudFront distribution domain name (legacy - use cloudfront_domain_name)"
-  value       = var.enable_cloudfront ? aws_cloudfront_distribution.main[0].domain_name : null
+  value       = var.enable_cloudfront && var.enable_botpress_servers ? aws_cloudfront_distribution.main[0].domain_name : null
 }
 
 output "botpress_cloudfront_domain_name" {
   description = "CloudFront distribution domain name (legacy - use cloudfront_domain_name)"
-  value       = var.enable_cloudfront ? aws_cloudfront_distribution.main[0].domain_name : null
+  value       = var.enable_cloudfront && var.enable_botpress_servers ? aws_cloudfront_distribution.main[0].domain_name : null
 }
 
 #------------------------------------------------------------------------------
@@ -127,8 +157,8 @@ output "botpress_cloudfront_domain_name" {
 #------------------------------------------------------------------------------
 
 output "app_alb_arn_suffix" {
-  description = "App ALB ARN suffix for CloudWatch"
-  value       = var.enable_app_servers ? aws_lb.app[0].arn_suffix : null
+  description = "App ALB ARN suffix for CloudWatch (removed)"
+  value       = null
 }
 
 output "api_alb_arn_suffix" {
@@ -137,8 +167,8 @@ output "api_alb_arn_suffix" {
 }
 
 output "app_target_group_arn_suffix" {
-  description = "App target group ARN suffix for CloudWatch"
-  value       = var.enable_app_servers ? aws_lb_target_group.app[0].arn_suffix : null
+  description = "App target group ARN suffix for CloudWatch (removed)"
+  value       = null
 }
 
 output "api_target_group_arn_suffix" {

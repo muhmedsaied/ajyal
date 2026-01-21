@@ -6,7 +6,16 @@
 
 locals {
   name_prefix = "${var.environment}-ajyal"
+
+  # Use custom AMI if provided, otherwise use the latest Windows Server AMI
+  windows_ami_id = var.use_custom_windows_ami && var.custom_windows_ami_id != "" ? var.custom_windows_ami_id : data.aws_ami.windows.id
+
+  # S3 bucket for prerequisites
+  prerequisites_bucket = var.prerequisites_s3_bucket != "" ? var.prerequisites_s3_bucket : "${var.environment}-ajyal-deployments-${data.aws_caller_identity.current.account_id}"
 }
+
+# Get current AWS account ID
+data "aws_caller_identity" "current" {}
 
 #------------------------------------------------------------------------------
 # Data Sources - AMIs
@@ -45,59 +54,8 @@ data "aws_ami" "linux" {
 }
 
 #------------------------------------------------------------------------------
-# Public ALB (App + Botpress)
+# Public ALB (Botpress only - App ALB removed)
 #------------------------------------------------------------------------------
-
-resource "aws_lb" "app" {
-  count              = var.enable_app_servers ? 1 : 0
-  name               = "${local.name_prefix}-app-alb"
-  internal           = false
-  load_balancer_type = "application"
-  security_groups    = [var.alb_security_group_id]
-  subnets            = length(var.public_subnet_ids) > 0 ? var.public_subnet_ids : [var.public_subnet_id]
-
-  enable_deletion_protection = false
-
-  tags = {
-    Name = "${local.name_prefix}-app-alb"
-  }
-}
-
-resource "aws_lb_target_group" "app" {
-  count    = var.enable_app_servers ? 1 : 0
-  name     = "${local.name_prefix}-app-tg"
-  port     = 80
-  protocol = "HTTP"
-  vpc_id   = var.vpc_id
-
-  health_check {
-    enabled             = true
-    healthy_threshold   = 2
-    interval            = 30
-    matcher             = "200"
-    path                = "/health"
-    port                = "traffic-port"
-    protocol            = "HTTP"
-    timeout             = 5
-    unhealthy_threshold = 2
-  }
-
-  tags = {
-    Name = "${local.name_prefix}-app-tg"
-  }
-}
-
-resource "aws_lb_listener" "app_http" {
-  count             = var.enable_app_servers ? 1 : 0
-  load_balancer_arn = aws_lb.app[0].arn
-  port              = 80
-  protocol          = "HTTP"
-
-  default_action {
-    type             = "forward"
-    target_group_arn = aws_lb_target_group.app[0].arn
-  }
-}
 
 # Botpress ALB
 resource "aws_lb" "botpress" {
@@ -181,7 +139,7 @@ resource "aws_lb_target_group" "api" {
     enabled             = true
     healthy_threshold   = 2
     interval            = 30
-    matcher             = "200"
+    matcher             = "200-499"
     path                = "/api/health"
     port                = "traffic-port"
     protocol            = "HTTP"
@@ -207,6 +165,150 @@ resource "aws_lb_listener" "api_http" {
 }
 
 #------------------------------------------------------------------------------
+# Integration NLB with Static IPs (for client whitelisting)
+#------------------------------------------------------------------------------
+
+# Elastic IPs for Integration NLB (static IPs for whitelisting)
+# PROTECTED: These IPs are shared with clients for whitelisting - do not delete!
+resource "aws_eip" "integration_nlb" {
+  count  = var.enable_integration_nlb ? length(var.public_subnet_ids) : 0
+  domain = "vpc"
+
+  tags = {
+    Name        = "${local.name_prefix}-integration-nlb-eip-${count.index + 1}"
+    Environment = var.environment
+    Project     = "Ajyal-LMS"
+    ManagedBy   = "Terraform"
+    Team        = "Slashtec-DevOps"
+    Module      = "compute"
+    Protected   = "true"
+  }
+
+  # Prevent accidental deletion - these IPs are shared with clients
+  lifecycle {
+    prevent_destroy = true
+  }
+}
+
+# Security Group for Integration NLB
+resource "aws_security_group" "integration_nlb" {
+  count       = var.enable_integration_nlb ? 1 : 0
+  name        = "${local.name_prefix}-integration-nlb-sg"
+  description = "Security group for Integration NLB - allows HTTP/HTTPS from internet"
+  vpc_id      = var.vpc_id
+
+  # HTTP from anywhere
+  ingress {
+    from_port   = 80
+    to_port     = 80
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+    description = "HTTP from internet"
+  }
+
+  # HTTPS from anywhere
+  ingress {
+    from_port   = 443
+    to_port     = 443
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+    description = "HTTPS from internet"
+  }
+
+  # Egress to targets
+  egress {
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
+    description = "Allow all outbound"
+  }
+
+  tags = {
+    Name        = "${local.name_prefix}-integration-nlb-sg"
+    Environment = var.environment
+    Project     = "Ajyal-LMS"
+    ManagedBy   = "Terraform"
+    Team        = "Slashtec-DevOps"
+    Module      = "compute"
+    Protected   = "true"
+  }
+}
+
+# Network Load Balancer for Integration Server
+# PROTECTED: This NLB provides static IPs for client whitelisting - do not delete!
+resource "aws_lb" "integration" {
+  count              = var.enable_integration_nlb ? 1 : 0
+  name               = "${local.name_prefix}-integration-nlb"
+  internal           = false
+  load_balancer_type = "network"
+
+  # Security group for NLB (supported since 2023)
+  security_groups = [aws_security_group.integration_nlb[0].id]
+
+  # AWS-level deletion protection
+  enable_deletion_protection = true
+
+  dynamic "subnet_mapping" {
+    for_each = { for idx, subnet_id in var.public_subnet_ids : idx => subnet_id }
+    content {
+      subnet_id     = subnet_mapping.value
+      allocation_id = aws_eip.integration_nlb[subnet_mapping.key].id
+    }
+  }
+
+  tags = {
+    Name        = "${local.name_prefix}-integration-nlb"
+    Environment = var.environment
+    Project     = "Ajyal-LMS"
+    ManagedBy   = "Terraform"
+    Team        = "Slashtec-DevOps"
+    Module      = "compute"
+    Protected   = "true"
+  }
+
+  # Terraform-level deletion protection
+  lifecycle {
+    prevent_destroy = true
+  }
+}
+
+# Integration Target Group - HTTP (port 80)
+resource "aws_lb_target_group" "integration_http" {
+  count    = var.enable_integration_nlb ? 1 : 0
+  name     = "${local.name_prefix}-int-http-tg"  # Shortened to meet 32 char limit
+  port     = 80
+  protocol = "TCP"
+  vpc_id   = var.vpc_id
+
+  health_check {
+    enabled             = true
+    healthy_threshold   = 3
+    unhealthy_threshold = 3
+    interval            = 30
+    port                = "traffic-port"
+    protocol            = "TCP"
+  }
+
+  tags = {
+    Name = "${local.name_prefix}-int-http-tg"
+  }
+}
+
+# NLB Listener - HTTP (port 80)
+resource "aws_lb_listener" "integration_http" {
+  count             = var.enable_integration_nlb ? 1 : 0
+  load_balancer_arn = aws_lb.integration[0].arn
+  port              = 80
+  protocol          = "TCP"
+
+  default_action {
+    type             = "forward"
+    target_group_arn = aws_lb_target_group.integration_http[0].arn
+  }
+}
+
+#------------------------------------------------------------------------------
 # Windows Launch Templates
 #------------------------------------------------------------------------------
 
@@ -215,8 +317,9 @@ resource "aws_launch_template" "app_server" {
   count = var.enable_app_servers ? 1 : 0
   name  = "${local.name_prefix}-app-server-lt"
 
-  image_id      = data.aws_ami.windows.id
+  image_id      = local.windows_ami_id
   instance_type = var.app_server_instance_type
+  key_name      = var.windows_key_name != "" ? var.windows_key_name : null
 
   iam_instance_profile {
     name = var.instance_profile_name
@@ -250,7 +353,51 @@ resource "aws_launch_template" "app_server" {
     # Install CodeDeploy Agent
     Set-ExecutionPolicy RemoteSigned -Force
     Import-Module AWSPowerShell
-    $region = (Invoke-RestMethod -Uri http://169.254.169.254/latest/meta-data/placement/region)
+    $region = $null
+    try {
+      $token = Invoke-RestMethod -Method Put -Uri http://169.254.169.254/latest/api/token -Headers @{ "X-aws-ec2-metadata-token-ttl-seconds" = "21600" } -TimeoutSec 5 -ErrorAction Stop
+      $region = Invoke-RestMethod -Uri http://169.254.169.254/latest/meta-data/placement/region -Headers @{ "X-aws-ec2-metadata-token" = $token } -TimeoutSec 5 -ErrorAction Stop
+    } catch {
+      Write-Host "Failed to fetch region from IMDSv2; continuing"
+    }
+    if (-not $region) { $region = $env:AWS_REGION }
+    if (-not $region) { $region = $env:AWS_DEFAULT_REGION }
+    $adminPasswordSecretId = "${var.windows_admin_password_secret_id}"
+    if ($adminPasswordSecretId -ne "") {
+      try {
+        Write-Host "Setting local admin credentials from Secrets Manager"
+        $secretString = $null
+        if (Get-Command aws -ErrorAction SilentlyContinue) {
+          $secretString = (aws secretsmanager get-secret-value --secret-id $adminPasswordSecretId --query 'SecretString' --output text --region $region)
+        } else {
+          Import-Module AWSPowerShell -ErrorAction SilentlyContinue
+          if (Get-Command Get-SECSecretValue -ErrorAction SilentlyContinue) {
+            $secretString = (Get-SECSecretValue -SecretId $adminPasswordSecretId -ErrorAction Stop).SecretString
+          }
+        }
+        $adminUser = "Administrator"
+        $adminPassword = $null
+        if ($secretString -and $secretString -ne "None") {
+          $adminPassword = $secretString
+          try {
+            $secretObj = $secretString | ConvertFrom-Json -ErrorAction Stop
+            if ($secretObj.username) { $adminUser = $secretObj.username }
+            if ($secretObj.password) { $adminPassword = $secretObj.password }
+          } catch {
+          }
+        }
+        if ($adminPassword -and $adminPassword -ne "None") {
+          net user $adminUser /active:yes | Out-Null
+          net user $adminUser $adminPassword | Out-Null
+          Write-Host "Local admin credentials updated"
+        } else {
+          Write-Host "Admin password secret not found or empty"
+        }
+      } catch {
+        Write-Host "Failed to set admin credentials from Secrets Manager: $($_.Exception.Message)"
+      }
+    }
+    %{if !var.use_custom_windows_ami}
     $source = "https://aws-codedeploy-$region.s3.$region.amazonaws.com/latest/codedeploy-agent.msi"
     $dest = "C:\temp\codedeploy-agent.msi"
     New-Item -Path "C:\temp" -ItemType Directory -Force
@@ -262,6 +409,7 @@ resource "aws_launch_template" "app_server" {
     $cwDest = "C:\temp\amazon-cloudwatch-agent.msi"
     Invoke-WebRequest -Uri $cwSource -OutFile $cwDest
     Start-Process msiexec.exe -ArgumentList "/i $cwDest /quiet" -Wait
+    %{endif}
 
     # Configure CloudWatch Agent for memory metrics and IIS logs
     $cwConfig = @'
@@ -339,7 +487,11 @@ resource "aws_launch_template" "app_server" {
     $cwConfig | Out-File -FilePath "C:\ProgramData\Amazon\AmazonCloudWatchAgent\amazon-cloudwatch-agent.json" -Encoding UTF8
 
     # Start CloudWatch Agent
-    & "C:\Program Files\Amazon\AmazonCloudWatchAgent\amazon-cloudwatch-agent-ctl.ps1" -a fetch-config -m ec2 -c file:"C:\ProgramData\Amazon\AmazonCloudWatchAgent\amazon-cloudwatch-agent.json" -s
+    if (Test-Path "C:\Program Files\Amazon\AmazonCloudWatchAgent\amazon-cloudwatch-agent-ctl.ps1") {
+      & "C:\Program Files\Amazon\AmazonCloudWatchAgent\amazon-cloudwatch-agent-ctl.ps1" -a fetch-config -m ec2 -c file:"C:\ProgramData\Amazon\AmazonCloudWatchAgent\amazon-cloudwatch-agent.json" -s
+    } else {
+      Write-Host "CloudWatch Agent not found; skipping configuration"
+    }
 
     Write-Host "CodeDeploy and CloudWatch agents installed and configured successfully"
     </powershell>
@@ -366,8 +518,9 @@ resource "aws_launch_template" "api_server" {
   count = var.enable_api_servers ? 1 : 0
   name  = "${local.name_prefix}-api-server-lt"
 
-  image_id      = data.aws_ami.windows.id
+  image_id      = local.windows_ami_id
   instance_type = var.api_server_instance_type
+  key_name      = var.windows_key_name != "" ? var.windows_key_name : null
 
   iam_instance_profile {
     name = var.instance_profile_name
@@ -378,7 +531,7 @@ resource "aws_launch_template" "api_server" {
   block_device_mappings {
     device_name = "/dev/sda1"
     ebs {
-      volume_size           = 100
+      volume_size           = 150  # Match Golden AMI snapshot size
       volume_type           = "gp3"
       encrypted             = true
       kms_key_id            = var.kms_key_arn
@@ -398,21 +551,94 @@ resource "aws_launch_template" "api_server" {
 
   user_data = base64encode(<<-EOF
     <powershell>
+    $ErrorActionPreference = "Continue"
     Set-ExecutionPolicy RemoteSigned -Force
-    Import-Module AWSPowerShell
-    $region = (Invoke-RestMethod -Uri http://169.254.169.254/latest/meta-data/placement/region)
+
+    # Get region
+    $region = $null
+    try {
+      $token = Invoke-RestMethod -Method Put -Uri http://169.254.169.254/latest/api/token -Headers @{ "X-aws-ec2-metadata-token-ttl-seconds" = "21600" } -TimeoutSec 5 -ErrorAction Stop
+      $region = Invoke-RestMethod -Uri http://169.254.169.254/latest/meta-data/placement/region -Headers @{ "X-aws-ec2-metadata-token" = $token } -TimeoutSec 5 -ErrorAction Stop
+    } catch {
+      Write-Host "Failed to fetch region from IMDSv2; continuing"
+    }
+    if (-not $region) { $region = $env:AWS_REGION }
+    if (-not $region) { $region = $env:AWS_DEFAULT_REGION }
+    $adminPasswordSecretId = "${var.windows_admin_password_secret_id}"
+    if ($adminPasswordSecretId -ne "") {
+      try {
+        Write-Host "Setting local admin credentials from Secrets Manager"
+        $secretString = $null
+        if (Get-Command aws -ErrorAction SilentlyContinue) {
+          $secretString = (aws secretsmanager get-secret-value --secret-id $adminPasswordSecretId --query 'SecretString' --output text --region $region)
+        } else {
+          Import-Module AWSPowerShell -ErrorAction SilentlyContinue
+          if (Get-Command Get-SECSecretValue -ErrorAction SilentlyContinue) {
+            $secretString = (Get-SECSecretValue -SecretId $adminPasswordSecretId -ErrorAction Stop).SecretString
+          }
+        }
+        $adminUser = "Administrator"
+        $adminPassword = $null
+        if ($secretString -and $secretString -ne "None") {
+          $adminPassword = $secretString
+          try {
+            $secretObj = $secretString | ConvertFrom-Json -ErrorAction Stop
+            if ($secretObj.username) { $adminUser = $secretObj.username }
+            if ($secretObj.password) { $adminPassword = $secretObj.password }
+          } catch {
+          }
+        }
+        if ($adminPassword -and $adminPassword -ne "None") {
+          net user $adminUser /active:yes | Out-Null
+          net user $adminUser $adminPassword | Out-Null
+          Write-Host "Local admin credentials updated"
+        } else {
+          Write-Host "Admin password secret not found or empty"
+        }
+      } catch {
+        Write-Host "Failed to set admin credentials from Secrets Manager: $($_.Exception.Message)"
+      }
+    }
+
+    # Create directories
+    New-Item -Path "C:\temp" -ItemType Directory -Force | Out-Null
+    New-Item -Path "C:\AjyalAPI\logs" -ItemType Directory -Force | Out-Null
+    New-Item -Path "C:\inetpub\wwwroot\AjyalAPI" -ItemType Directory -Force | Out-Null
+
+    %{if !var.use_custom_windows_ami}
+    # Install prerequisites if not using custom AMI
+    Write-Host "Installing prerequisites..."
+
+    # Install CodeDeploy Agent
     $source = "https://aws-codedeploy-$region.s3.$region.amazonaws.com/latest/codedeploy-agent.msi"
-    $dest = "C:\temp\codedeploy-agent.msi"
-    New-Item -Path "C:\temp" -ItemType Directory -Force
-    Invoke-WebRequest -Uri $source -OutFile $dest
-    Start-Process msiexec.exe -ArgumentList "/i $dest /quiet" -Wait
+    Invoke-WebRequest -Uri $source -OutFile "C:\temp\codedeploy-agent.msi"
+    Start-Process msiexec.exe -ArgumentList "/i C:\temp\codedeploy-agent.msi /quiet" -Wait
 
+    # Install CloudWatch Agent
     $cwSource = "https://s3.$region.amazonaws.com/amazoncloudwatch-agent-$region/windows/amd64/latest/amazon-cloudwatch-agent.msi"
-    $cwDest = "C:\temp\amazon-cloudwatch-agent.msi"
-    Invoke-WebRequest -Uri $cwSource -OutFile $cwDest
-    Start-Process msiexec.exe -ArgumentList "/i $cwDest /quiet" -Wait
+    Invoke-WebRequest -Uri $cwSource -OutFile "C:\temp\amazon-cloudwatch-agent.msi"
+    Start-Process msiexec.exe -ArgumentList "/i C:\temp\amazon-cloudwatch-agent.msi /quiet" -Wait
 
-    # Configure CloudWatch Agent for memory metrics and API logs
+    %{if var.install_prerequisites_on_launch}
+    # Run full prerequisites installation from S3
+    try {
+        aws s3 cp "s3://${local.prerequisites_bucket}/scripts/windows/install-prerequisites.ps1" "C:\temp\install-prerequisites.ps1" --region $region
+        & "C:\temp\install-prerequisites.ps1" -S3Bucket "${local.prerequisites_bucket}"
+    } catch {
+        Write-Host "Prerequisites script not found, continuing with basic setup"
+    }
+    %{endif}
+    %{endif}
+
+    # Configure CloudWatch Agent
+    %{if var.cloudwatch_config_source == "ssm"}
+    # Fetch CloudWatch config from SSM Parameter Store
+    Write-Host "Configuring CloudWatch Agent from SSM..."
+    Start-Sleep -Seconds 10  # Wait for CloudWatch agent installation
+    & "C:\Program Files\Amazon\AmazonCloudWatchAgent\amazon-cloudwatch-agent-ctl.ps1" -a fetch-config -m ec2 -c "ssm:/${local.name_prefix}/cloudwatch/windows-api-server" -s
+    %{else}
+    # Use inline CloudWatch config
+    Write-Host "Configuring CloudWatch Agent with inline config..."
     $cwConfig = @'
     {
       "agent": {
@@ -463,7 +689,7 @@ resource "aws_launch_template" "api_server" {
           "files": {
             "collect_list": [
               {
-                "file_path": "C:\\inetpub\\logs\\LogFiles\\W3SVC1\\*.log",
+                "file_path": "C:\\inetpub\\logs\\LogFiles\\W3SVC*\\*.log",
                 "log_group_name": "/${var.environment}-ajyal/windows/api-server/iis",
                 "log_stream_name": "{instance_id}",
                 "timezone": "UTC"
@@ -482,6 +708,9 @@ resource "aws_launch_template" "api_server" {
 '@
     $cwConfig | Out-File -FilePath "C:\ProgramData\Amazon\AmazonCloudWatchAgent\amazon-cloudwatch-agent.json" -Encoding UTF8
     & "C:\Program Files\Amazon\AmazonCloudWatchAgent\amazon-cloudwatch-agent-ctl.ps1" -a fetch-config -m ec2 -c file:"C:\ProgramData\Amazon\AmazonCloudWatchAgent\amazon-cloudwatch-agent.json" -s
+    %{endif}
+
+    Write-Host "Bootstrap complete for API Server"
     </powershell>
     EOF
   )
@@ -499,6 +728,9 @@ resource "aws_launch_template" "api_server" {
   tags = {
     Name = "${local.name_prefix}-api-server-lt"
   }
+
+  # Ensure SSM parameter is created before launch template
+  depends_on = [aws_ssm_parameter.cloudwatch_api_server]
 }
 
 # Integration Servers Launch Template
@@ -506,8 +738,9 @@ resource "aws_launch_template" "integration_server" {
   count = var.enable_integration_servers ? 1 : 0
   name  = "${local.name_prefix}-integration-server-lt"
 
-  image_id      = data.aws_ami.windows.id
+  image_id      = local.windows_ami_id
   instance_type = var.integration_server_instance_type
+  key_name      = var.windows_key_name != "" ? var.windows_key_name : null
 
   iam_instance_profile {
     name = var.instance_profile_name
@@ -518,7 +751,7 @@ resource "aws_launch_template" "integration_server" {
   block_device_mappings {
     device_name = "/dev/sda1"
     ebs {
-      volume_size           = 100
+      volume_size           = 150  # Match Golden AMI snapshot size
       volume_type           = "gp3"
       encrypted             = true
       kms_key_id            = var.kms_key_arn
@@ -538,21 +771,94 @@ resource "aws_launch_template" "integration_server" {
 
   user_data = base64encode(<<-EOF
     <powershell>
+    $ErrorActionPreference = "Continue"
     Set-ExecutionPolicy RemoteSigned -Force
-    Import-Module AWSPowerShell
-    $region = (Invoke-RestMethod -Uri http://169.254.169.254/latest/meta-data/placement/region)
+
+    # Get region
+    $region = $null
+    try {
+      $token = Invoke-RestMethod -Method Put -Uri http://169.254.169.254/latest/api/token -Headers @{ "X-aws-ec2-metadata-token-ttl-seconds" = "21600" } -TimeoutSec 5 -ErrorAction Stop
+      $region = Invoke-RestMethod -Uri http://169.254.169.254/latest/meta-data/placement/region -Headers @{ "X-aws-ec2-metadata-token" = $token } -TimeoutSec 5 -ErrorAction Stop
+    } catch {
+      Write-Host "Failed to fetch region from IMDSv2; continuing"
+    }
+    if (-not $region) { $region = $env:AWS_REGION }
+    if (-not $region) { $region = $env:AWS_DEFAULT_REGION }
+    $adminPasswordSecretId = "${var.windows_admin_password_secret_id}"
+    if ($adminPasswordSecretId -ne "") {
+      try {
+        Write-Host "Setting local admin credentials from Secrets Manager"
+        $secretString = $null
+        if (Get-Command aws -ErrorAction SilentlyContinue) {
+          $secretString = (aws secretsmanager get-secret-value --secret-id $adminPasswordSecretId --query 'SecretString' --output text --region $region)
+        } else {
+          Import-Module AWSPowerShell -ErrorAction SilentlyContinue
+          if (Get-Command Get-SECSecretValue -ErrorAction SilentlyContinue) {
+            $secretString = (Get-SECSecretValue -SecretId $adminPasswordSecretId -ErrorAction Stop).SecretString
+          }
+        }
+        $adminUser = "Administrator"
+        $adminPassword = $null
+        if ($secretString -and $secretString -ne "None") {
+          $adminPassword = $secretString
+          try {
+            $secretObj = $secretString | ConvertFrom-Json -ErrorAction Stop
+            if ($secretObj.username) { $adminUser = $secretObj.username }
+            if ($secretObj.password) { $adminPassword = $secretObj.password }
+          } catch {
+          }
+        }
+        if ($adminPassword -and $adminPassword -ne "None") {
+          net user $adminUser /active:yes | Out-Null
+          net user $adminUser $adminPassword | Out-Null
+          Write-Host "Local admin credentials updated"
+        } else {
+          Write-Host "Admin password secret not found or empty"
+        }
+      } catch {
+        Write-Host "Failed to set admin credentials from Secrets Manager: $($_.Exception.Message)"
+      }
+    }
+
+    # Create directories
+    New-Item -Path "C:\temp" -ItemType Directory -Force | Out-Null
+    New-Item -Path "C:\AjyalIntegration\logs" -ItemType Directory -Force | Out-Null
+    New-Item -Path "C:\inetpub\wwwroot\AjyalIntegration" -ItemType Directory -Force | Out-Null
+
+    %{if !var.use_custom_windows_ami}
+    # Install prerequisites if not using custom AMI
+    Write-Host "Installing prerequisites..."
+
+    # Install CodeDeploy Agent
     $source = "https://aws-codedeploy-$region.s3.$region.amazonaws.com/latest/codedeploy-agent.msi"
-    $dest = "C:\temp\codedeploy-agent.msi"
-    New-Item -Path "C:\temp" -ItemType Directory -Force
-    Invoke-WebRequest -Uri $source -OutFile $dest
-    Start-Process msiexec.exe -ArgumentList "/i $dest /quiet" -Wait
+    Invoke-WebRequest -Uri $source -OutFile "C:\temp\codedeploy-agent.msi"
+    Start-Process msiexec.exe -ArgumentList "/i C:\temp\codedeploy-agent.msi /quiet" -Wait
 
+    # Install CloudWatch Agent
     $cwSource = "https://s3.$region.amazonaws.com/amazoncloudwatch-agent-$region/windows/amd64/latest/amazon-cloudwatch-agent.msi"
-    $cwDest = "C:\temp\amazon-cloudwatch-agent.msi"
-    Invoke-WebRequest -Uri $cwSource -OutFile $cwDest
-    Start-Process msiexec.exe -ArgumentList "/i $cwDest /quiet" -Wait
+    Invoke-WebRequest -Uri $cwSource -OutFile "C:\temp\amazon-cloudwatch-agent.msi"
+    Start-Process msiexec.exe -ArgumentList "/i C:\temp\amazon-cloudwatch-agent.msi /quiet" -Wait
 
-    # Configure CloudWatch Agent for memory metrics and integration logs
+    %{if var.install_prerequisites_on_launch}
+    # Run full prerequisites installation from S3
+    try {
+        aws s3 cp "s3://${local.prerequisites_bucket}/scripts/windows/install-prerequisites.ps1" "C:\temp\install-prerequisites.ps1" --region $region
+        & "C:\temp\install-prerequisites.ps1" -S3Bucket "${local.prerequisites_bucket}"
+    } catch {
+        Write-Host "Prerequisites script not found, continuing with basic setup"
+    }
+    %{endif}
+    %{endif}
+
+    # Configure CloudWatch Agent
+    %{if var.cloudwatch_config_source == "ssm"}
+    # Fetch CloudWatch config from SSM Parameter Store
+    Write-Host "Configuring CloudWatch Agent from SSM..."
+    Start-Sleep -Seconds 10  # Wait for CloudWatch agent installation
+    & "C:\Program Files\Amazon\AmazonCloudWatchAgent\amazon-cloudwatch-agent-ctl.ps1" -a fetch-config -m ec2 -c "ssm:/${local.name_prefix}/cloudwatch/windows-integration-server" -s
+    %{else}
+    # Use inline CloudWatch config
+    Write-Host "Configuring CloudWatch Agent with inline config..."
     $cwConfig = @'
     {
       "agent": {
@@ -603,6 +909,12 @@ resource "aws_launch_template" "integration_server" {
           "files": {
             "collect_list": [
               {
+                "file_path": "C:\\inetpub\\logs\\LogFiles\\W3SVC*\\*.log",
+                "log_group_name": "/${var.environment}-ajyal/windows/integration-server/iis",
+                "log_stream_name": "{instance_id}",
+                "timezone": "UTC"
+              },
+              {
                 "file_path": "C:\\AjyalIntegration\\logs\\*.log",
                 "log_group_name": "/${var.environment}-ajyal/windows/integration-server/integration-logs",
                 "log_stream_name": "{instance_id}",
@@ -616,6 +928,9 @@ resource "aws_launch_template" "integration_server" {
 '@
     $cwConfig | Out-File -FilePath "C:\ProgramData\Amazon\AmazonCloudWatchAgent\amazon-cloudwatch-agent.json" -Encoding UTF8
     & "C:\Program Files\Amazon\AmazonCloudWatchAgent\amazon-cloudwatch-agent-ctl.ps1" -a fetch-config -m ec2 -c file:"C:\ProgramData\Amazon\AmazonCloudWatchAgent\amazon-cloudwatch-agent.json" -s
+    %{endif}
+
+    Write-Host "Bootstrap complete for Integration Server"
     </powershell>
     EOF
   )
@@ -633,6 +948,9 @@ resource "aws_launch_template" "integration_server" {
   tags = {
     Name = "${local.name_prefix}-integration-server-lt"
   }
+
+  # Ensure SSM parameter is created before launch template
+  depends_on = [aws_ssm_parameter.cloudwatch_integration_server]
 }
 
 # Logging Servers Launch Template
@@ -640,8 +958,9 @@ resource "aws_launch_template" "logging_server" {
   count = var.enable_logging_servers ? 1 : 0
   name  = "${local.name_prefix}-logging-server-lt"
 
-  image_id      = data.aws_ami.windows.id
+  image_id      = local.windows_ami_id
   instance_type = var.logging_server_instance_type
+  key_name      = var.windows_key_name != "" ? var.windows_key_name : null
 
   iam_instance_profile {
     name = var.instance_profile_name
@@ -674,7 +993,51 @@ resource "aws_launch_template" "logging_server" {
     <powershell>
     Set-ExecutionPolicy RemoteSigned -Force
     Import-Module AWSPowerShell
-    $region = (Invoke-RestMethod -Uri http://169.254.169.254/latest/meta-data/placement/region)
+    $region = $null
+    try {
+      $token = Invoke-RestMethod -Method Put -Uri http://169.254.169.254/latest/api/token -Headers @{ "X-aws-ec2-metadata-token-ttl-seconds" = "21600" } -TimeoutSec 5 -ErrorAction Stop
+      $region = Invoke-RestMethod -Uri http://169.254.169.254/latest/meta-data/placement/region -Headers @{ "X-aws-ec2-metadata-token" = $token } -TimeoutSec 5 -ErrorAction Stop
+    } catch {
+      Write-Host "Failed to fetch region from IMDSv2; continuing"
+    }
+    if (-not $region) { $region = $env:AWS_REGION }
+    if (-not $region) { $region = $env:AWS_DEFAULT_REGION }
+    $adminPasswordSecretId = "${var.windows_admin_password_secret_id}"
+    if ($adminPasswordSecretId -ne "") {
+      try {
+        Write-Host "Setting local admin credentials from Secrets Manager"
+        $secretString = $null
+        if (Get-Command aws -ErrorAction SilentlyContinue) {
+          $secretString = (aws secretsmanager get-secret-value --secret-id $adminPasswordSecretId --query 'SecretString' --output text --region $region)
+        } else {
+          Import-Module AWSPowerShell -ErrorAction SilentlyContinue
+          if (Get-Command Get-SECSecretValue -ErrorAction SilentlyContinue) {
+            $secretString = (Get-SECSecretValue -SecretId $adminPasswordSecretId -ErrorAction Stop).SecretString
+          }
+        }
+        $adminUser = "Administrator"
+        $adminPassword = $null
+        if ($secretString -and $secretString -ne "None") {
+          $adminPassword = $secretString
+          try {
+            $secretObj = $secretString | ConvertFrom-Json -ErrorAction Stop
+            if ($secretObj.username) { $adminUser = $secretObj.username }
+            if ($secretObj.password) { $adminPassword = $secretObj.password }
+          } catch {
+          }
+        }
+        if ($adminPassword -and $adminPassword -ne "None") {
+          net user $adminUser /active:yes | Out-Null
+          net user $adminUser $adminPassword | Out-Null
+          Write-Host "Local admin credentials updated"
+        } else {
+          Write-Host "Admin password secret not found or empty"
+        }
+      } catch {
+        Write-Host "Failed to set admin credentials from Secrets Manager: $($_.Exception.Message)"
+      }
+    }
+    %{if !var.use_custom_windows_ami}
     $source = "https://aws-codedeploy-$region.s3.$region.amazonaws.com/latest/codedeploy-agent.msi"
     $dest = "C:\temp\codedeploy-agent.msi"
     New-Item -Path "C:\temp" -ItemType Directory -Force
@@ -685,6 +1048,7 @@ resource "aws_launch_template" "logging_server" {
     $cwDest = "C:\temp\amazon-cloudwatch-agent.msi"
     Invoke-WebRequest -Uri $cwSource -OutFile $cwDest
     Start-Process msiexec.exe -ArgumentList "/i $cwDest /quiet" -Wait
+    %{endif}
 
     # Configure CloudWatch Agent for memory metrics and centralized logs
     $cwConfig = @'
@@ -755,7 +1119,11 @@ resource "aws_launch_template" "logging_server" {
     }
 '@
     $cwConfig | Out-File -FilePath "C:\ProgramData\Amazon\AmazonCloudWatchAgent\amazon-cloudwatch-agent.json" -Encoding UTF8
-    & "C:\Program Files\Amazon\AmazonCloudWatchAgent\amazon-cloudwatch-agent-ctl.ps1" -a fetch-config -m ec2 -c file:"C:\ProgramData\Amazon\AmazonCloudWatchAgent\amazon-cloudwatch-agent.json" -s
+    if (Test-Path "C:\Program Files\Amazon\AmazonCloudWatchAgent\amazon-cloudwatch-agent-ctl.ps1") {
+      & "C:\Program Files\Amazon\AmazonCloudWatchAgent\amazon-cloudwatch-agent-ctl.ps1" -a fetch-config -m ec2 -c file:"C:\ProgramData\Amazon\AmazonCloudWatchAgent\amazon-cloudwatch-agent.json" -s
+    } else {
+      Write-Host "CloudWatch Agent not found; skipping configuration"
+    }
     </powershell>
     EOF
   )
@@ -1321,14 +1689,13 @@ resource "aws_autoscaling_group" "app" {
   max_size            = var.app_server_max_size
   desired_capacity    = var.app_server_desired_size
   vpc_zone_identifier = [var.private_web_subnet_id]
-  target_group_arns   = [aws_lb_target_group.app[0].arn]
 
   launch_template {
     id      = aws_launch_template.app_server[0].id
     version = "$Latest"
   }
 
-  health_check_type         = "ELB"
+  health_check_type         = "EC2"
   health_check_grace_period = 300
 
   tag {
@@ -1432,12 +1799,17 @@ resource "aws_autoscaling_group" "integration" {
   desired_capacity    = var.integration_server_min_size
   vpc_zone_identifier = [var.private_app_subnet_id]
 
+  # Attach to NLB target group if NLB is enabled (port 80 only)
+  target_group_arns = var.enable_integration_nlb ? [
+    aws_lb_target_group.integration_http[0].arn
+  ] : []
+
   launch_template {
     id      = aws_launch_template.integration_server[0].id
     version = "$Latest"
   }
 
-  health_check_type         = "EC2"
+  health_check_type         = var.enable_integration_nlb ? "ELB" : "EC2"
   health_check_grace_period = 300
 
   tag {
@@ -1697,62 +2069,37 @@ resource "aws_autoscaling_group" "content" {
 }
 
 #------------------------------------------------------------------------------
-# Single CloudFront Distribution with Multiple Origins
-# Routes /botpress/* to Botpress ALB, everything else to App ALB
+# Single CloudFront Distribution (Botpress only)
 #------------------------------------------------------------------------------
 
 resource "aws_cloudfront_distribution" "main" {
-  count   = var.enable_cloudfront ? 1 : 0
+  count   = var.enable_cloudfront && var.enable_botpress_servers ? 1 : 0
   enabled = true
-  comment = "${local.name_prefix} CloudFront Distribution"
+  comment = "${local.name_prefix} CloudFront Distribution (Botpress)"
 
-  # App ALB as primary origin
-  dynamic "origin" {
-    for_each = var.enable_app_servers ? [1] : []
-    content {
-      domain_name = aws_lb.app[0].dns_name
-      origin_id   = "app-alb"
+  # Botpress ALB as origin
+  origin {
+    domain_name = aws_lb.botpress[0].dns_name
+    origin_id   = "botpress-alb"
 
-      custom_origin_config {
-        http_port              = 80
-        https_port             = 443
-        origin_protocol_policy = "http-only"
-        origin_ssl_protocols   = ["TLSv1.2"]
-      }
+    custom_origin_config {
+      http_port              = 80
+      https_port             = 443
+      origin_protocol_policy = "http-only"
+      origin_ssl_protocols   = ["TLSv1.2"]
+    }
 
-      custom_header {
-        name  = "X-CloudFront-Secret"
-        value = var.cloudfront_secret_header
-      }
+    custom_header {
+      name  = "X-CloudFront-Secret"
+      value = var.cloudfront_secret_header
     }
   }
 
-  # Botpress ALB as secondary origin
-  dynamic "origin" {
-    for_each = var.enable_botpress_servers ? [1] : []
-    content {
-      domain_name = aws_lb.botpress[0].dns_name
-      origin_id   = "botpress-alb"
-
-      custom_origin_config {
-        http_port              = 80
-        https_port             = 443
-        origin_protocol_policy = "http-only"
-        origin_ssl_protocols   = ["TLSv1.2"]
-      }
-
-      custom_header {
-        name  = "X-CloudFront-Secret"
-        value = var.cloudfront_secret_header
-      }
-    }
-  }
-
-  # Default behavior - App ALB
+  # Default behavior - Botpress ALB
   default_cache_behavior {
     allowed_methods  = ["DELETE", "GET", "HEAD", "OPTIONS", "PATCH", "POST", "PUT"]
     cached_methods   = ["GET", "HEAD"]
-    target_origin_id = "app-alb"
+    target_origin_id = "botpress-alb"
 
     forwarded_values {
       query_string = true
@@ -1770,98 +2117,27 @@ resource "aws_cloudfront_distribution" "main" {
     compress               = true
   }
 
-  # Botpress path - route to Botpress ALB
-  dynamic "ordered_cache_behavior" {
-    for_each = var.enable_botpress_servers ? [1] : []
-    content {
-      path_pattern     = "/botpress/*"
-      allowed_methods  = ["DELETE", "GET", "HEAD", "OPTIONS", "PATCH", "POST", "PUT"]
-      cached_methods   = ["GET", "HEAD"]
-      target_origin_id = "botpress-alb"
-
-      forwarded_values {
-        query_string = true
-        headers      = ["Host", "Origin", "Authorization"]
-
-        cookies {
-          forward = "all"
-        }
-      }
-
-      viewer_protocol_policy = "redirect-to-https"
-      min_ttl                = 0
-      default_ttl            = 0
-      max_ttl                = 86400
-      compress               = true
-    }
-  }
-
   # Botpress WebSocket support
-  dynamic "ordered_cache_behavior" {
-    for_each = var.enable_botpress_servers ? [1] : []
-    content {
-      path_pattern     = "/socket.io/*"
-      allowed_methods  = ["DELETE", "GET", "HEAD", "OPTIONS", "PATCH", "POST", "PUT"]
-      cached_methods   = ["GET", "HEAD"]
-      target_origin_id = "botpress-alb"
-
-      forwarded_values {
-        query_string = true
-        headers      = ["*"]
-
-        cookies {
-          forward = "all"
-        }
-      }
-
-      viewer_protocol_policy = "redirect-to-https"
-      min_ttl                = 0
-      default_ttl            = 0
-      max_ttl                = 0
-      compress               = false
-    }
-  }
-
-  # Cache static assets
   ordered_cache_behavior {
-    path_pattern     = "/static/*"
-    allowed_methods  = ["GET", "HEAD", "OPTIONS"]
+    path_pattern     = "/socket.io/*"
+    allowed_methods  = ["DELETE", "GET", "HEAD", "OPTIONS", "PATCH", "POST", "PUT"]
     cached_methods   = ["GET", "HEAD"]
-    target_origin_id = "app-alb"
+    target_origin_id = "botpress-alb"
 
     forwarded_values {
-      query_string = false
+      query_string = true
+      headers      = ["*"]
+
       cookies {
-        forward = "none"
+        forward = "all"
       }
     }
 
     viewer_protocol_policy = "redirect-to-https"
     min_ttl                = 0
-    default_ttl            = 86400
-    max_ttl                = 604800
-    compress               = true
-  }
-
-  # Cache images
-  ordered_cache_behavior {
-    path_pattern     = "*.jpg"
-    allowed_methods  = ["GET", "HEAD"]
-    cached_methods   = ["GET", "HEAD"]
-    target_origin_id = "app-alb"
-
-    forwarded_values {
-      query_string = false
-      cookies {
-        forward = "none"
-      }
-    }
-
-    viewer_protocol_policy = "redirect-to-https"
-    min_ttl                = 0
-    default_ttl            = 86400
-    max_ttl                = 604800
-    compress               = true
+    default_ttl            = 0
+    max_ttl                = 0
+    compress               = false
   }
 
   price_class = var.cloudfront_price_class

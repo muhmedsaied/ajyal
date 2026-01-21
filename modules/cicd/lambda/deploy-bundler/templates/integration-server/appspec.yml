@@ -1,0 +1,16 @@
+version: 0.0
+os: windows
+files:
+  - source: /app
+    destination: C:\inetpub\wwwroot\AjyalIntegration
+file_exists_behavior: OVERWRITE
+hooks:
+  BeforeInstall:
+    - location: scripts\before-install.ps1
+      timeout: 1800
+  AfterInstall:
+    - location: scripts\after-install.ps1
+      timeout: 1800
+  ValidateService:
+    - location: scripts\validate-service.ps1
+      timeout: 600

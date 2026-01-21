@@ -41,6 +41,7 @@ Thumbs.db
 secrets.yaml
 secrets.yml
 credentials.json
+keys/
 
 # Logs
 *.log

@@ -207,7 +207,7 @@ data "aws_ec2_managed_prefix_list" "cloudfront" {
 # Using separate rules to allow in-place updates without recreating the security group
 resource "aws_security_group" "alb" {
   name        = "${local.name_prefix}-alb-sg"
-  description = "Security group for Application Load Balancers"  # Keep original description to avoid replacement
+  description = "Security group for Application Load Balancers" # Keep original description to avoid replacement
   vpc_id      = var.vpc_id
 
   # Egress rule inline (rarely changes)
@@ -229,15 +229,15 @@ resource "aws_security_group" "alb" {
 
 # ALB Security Group Rules - Separate resources for in-place updates
 
-# HTTPS from CloudFront only
+# HTTP from CloudFront only
 resource "aws_security_group_rule" "alb_https_cloudfront" {
   type              = "ingress"
-  from_port         = 443
-  to_port           = 443
+  from_port         = 80
+  to_port           = 80
   protocol          = "tcp"
   prefix_list_ids   = [data.aws_ec2_managed_prefix_list.cloudfront.id]
   security_group_id = aws_security_group.alb.id
-  description       = "HTTPS from CloudFront only"
+  description       = "HTTP from CloudFront only"
 }
 
 # NOTE: CloudFront prefix list has 45+ entries which each consume rule capacity.
@@ -306,6 +306,42 @@ resource "aws_security_group" "windows_server" {
     protocol        = "tcp"
     security_groups = [aws_security_group.linux_server.id]
     description     = "HTTPS from Linux servers"
+  }
+
+  # Integration NLB traffic (when NLB is enabled for static IPs)
+  # NLBs pass through traffic directly, so targets need to allow public access
+  dynamic "ingress" {
+    for_each = var.enable_integration_nlb ? [1] : []
+    content {
+      from_port   = 80
+      to_port     = 80
+      protocol    = "tcp"
+      cidr_blocks = ["0.0.0.0/0"]
+      description = "HTTP from Integration NLB (public)"
+    }
+  }
+
+  dynamic "ingress" {
+    for_each = var.enable_integration_nlb ? [1] : []
+    content {
+      from_port   = 443
+      to_port     = 443
+      protocol    = "tcp"
+      cidr_blocks = ["0.0.0.0/0"]
+      description = "HTTPS from Integration NLB (public)"
+    }
+  }
+
+  # VPN access (optional)
+  dynamic "ingress" {
+    for_each = toset(var.vpn_access_cidr_blocks)
+    content {
+      from_port   = 0
+      to_port     = 0
+      protocol    = "-1"
+      cidr_blocks = [ingress.value]
+      description = "VPN access"
+    }
   }
 
   egress {
@@ -378,6 +414,18 @@ resource "aws_security_group" "linux_server" {
     protocol    = "-1"
     self        = true
     description = "Internal Linux server communication"
+  }
+
+  # VPN access (optional)
+  dynamic "ingress" {
+    for_each = toset(var.vpn_access_cidr_blocks)
+    content {
+      from_port   = 0
+      to_port     = 0
+      protocol    = "-1"
+      cidr_blocks = [ingress.value]
+      description = "VPN access"
+    }
   }
 
   egress {
