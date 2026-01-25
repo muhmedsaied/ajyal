@@ -23,7 +23,7 @@ variable "enable_app_servers" {
 }
 
 variable "app_server_instance_type" {
-  default = "t3.medium" # Cost optimized
+  default = "t3.large"
 }
 
 variable "app_server_min_size" {
@@ -43,15 +43,15 @@ variable "enable_api_servers" {
 }
 
 variable "api_server_instance_type" {
-  default = "t3.medium"
+  default = "t3.large"
 }
 
 variable "api_server_min_size" {
-  default = 2
+  default = 1
 }
 
 variable "api_server_max_size" {
-  default = 2
+  default = 1
 }
 
 variable "enable_integration_servers" {
@@ -59,15 +59,15 @@ variable "enable_integration_servers" {
 }
 
 variable "integration_server_instance_type" {
-  default = "t3.small"
+  default = "t3.large"
 }
 
 variable "integration_server_min_size" {
-  default = 2
+  default = 1
 }
 
 variable "integration_server_max_size" {
-  default = 2
+  default = 1
 }
 
 variable "enable_integration_nlb" {
