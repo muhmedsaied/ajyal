@@ -191,3 +191,18 @@ variable "enable_cloudfront" {
 variable "cloudfront_price_class" {
   default = "PriceClass_100" # North America and Europe only (cost optimized)
 }
+
+variable "cloudfront_domain_aliases" {
+  description = "Custom domain aliases for CloudFront"
+  default     = ["ajyallmsstg.moe.gov.jo"]
+}
+
+variable "cloudfront_acm_certificate_arn" {
+  description = "ACM certificate ARN for CloudFront (must be in us-east-1)"
+  default     = "arn:aws:acm:us-east-1:946846709937:certificate/8a35fe44-2a12-4f8b-bdbf-cfda844f79ea"
+}
+
+variable "integration_nlb_acm_certificate_arn" {
+  description = "ACM certificate ARN for Integration NLB HTTPS (in eu-west-1)"
+  default     = "arn:aws:acm:eu-west-1:946846709937:certificate/bfc773e7-8a47-4939-816e-71ec02c31a58"
+}

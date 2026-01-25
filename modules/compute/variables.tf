@@ -12,6 +12,11 @@ variable "vpc_id" {
   type        = string
 }
 
+variable "vpc_cidr" {
+  description = "VPC CIDR block for internal network access"
+  type        = string
+}
+
 variable "public_subnet_id" {
   description = "Public subnet ID"
   type        = string
@@ -52,6 +57,12 @@ variable "linux_security_group_id" {
 variable "alb_security_group_id" {
   description = "ALB security group ID"
   type        = string
+}
+
+variable "integration_security_group_id" {
+  description = "Integration server security group ID (separate from Windows SG for DB access control)"
+  type        = string
+  default     = ""
 }
 
 variable "instance_profile_name" {
@@ -309,6 +320,24 @@ variable "cloudfront_secret_header" {
   type        = string
   default     = "ajyal-cf-secret-2024"
   sensitive   = true
+}
+
+variable "cloudfront_domain_aliases" {
+  description = "Custom domain aliases for CloudFront distribution"
+  type        = list(string)
+  default     = []
+}
+
+variable "cloudfront_acm_certificate_arn" {
+  description = "ACM certificate ARN for CloudFront custom domain (must be in us-east-1)"
+  type        = string
+  default     = ""
+}
+
+variable "integration_nlb_acm_certificate_arn" {
+  description = "ACM certificate ARN for Integration NLB HTTPS listener (in the same region as NLB)"
+  type        = string
+  default     = ""
 }
 
 #------------------------------------------------------------------------------

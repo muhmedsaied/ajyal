@@ -2,24 +2,24 @@
 # Compute Module Outputs
 ###############################################################################
 
-# App ALB removed - outputs return null for backward compatibility
+# App ALB (existing, referenced via data source)
 output "app_alb_dns_name" {
-  description = "App ALB DNS name (removed)"
-  value       = null
+  description = "App ALB DNS name"
+  value       = var.enable_app_servers ? data.aws_lb.app[0].dns_name : null
 }
 
 output "app_alb_arn" {
-  description = "App ALB ARN (removed)"
-  value       = null
+  description = "App ALB ARN"
+  value       = var.enable_app_servers ? data.aws_lb.app[0].arn : null
 }
 
 output "app_target_group_name" {
-  description = "App target group name (removed)"
+  description = "App target group name (managed separately)"
   value       = null
 }
 
 output "app_target_group_arn" {
-  description = "App target group ARN (removed)"
+  description = "App target group ARN (managed separately)"
   value       = null
 }
 
@@ -157,8 +157,8 @@ output "botpress_cloudfront_domain_name" {
 #------------------------------------------------------------------------------
 
 output "app_alb_arn_suffix" {
-  description = "App ALB ARN suffix for CloudWatch (removed)"
-  value       = null
+  description = "App ALB ARN suffix for CloudWatch"
+  value       = var.enable_app_servers ? data.aws_lb.app[0].arn_suffix : null
 }
 
 output "api_alb_arn_suffix" {

@@ -32,6 +32,11 @@ output "linux_server_security_group_id" {
   value       = aws_security_group.linux_server.id
 }
 
+output "integration_server_security_group_id" {
+  description = "Integration server security group ID (separate from Windows SG for DB access control)"
+  value       = aws_security_group.integration_server.id
+}
+
 output "database_security_group_id" {
   description = "Database security group ID"
   value       = aws_security_group.database.id

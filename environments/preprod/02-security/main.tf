@@ -103,6 +103,11 @@ output "linux_server_security_group_id" {
   value = module.security.linux_server_security_group_id
 }
 
+output "integration_server_security_group_id" {
+  description = "Integration server security group ID"
+  value       = module.security.integration_server_security_group_id
+}
+
 output "database_security_group_id" {
   value = module.security.database_security_group_id
 }

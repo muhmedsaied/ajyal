@@ -12,6 +12,9 @@ locals {
 
   # S3 bucket for prerequisites
   prerequisites_bucket = var.prerequisites_s3_bucket != "" ? var.prerequisites_s3_bucket : "${var.environment}-ajyal-deployments-${data.aws_caller_identity.current.account_id}"
+
+  # Use dedicated integration SG if provided, otherwise fall back to windows SG
+  integration_sg_id = var.integration_security_group_id != "" ? var.integration_security_group_id : var.windows_security_group_id
 }
 
 # Get current AWS account ID
@@ -54,7 +57,17 @@ data "aws_ami" "linux" {
 }
 
 #------------------------------------------------------------------------------
-# Public ALB (Botpress only - App ALB removed)
+# Public ALB - App ALB (existing, referenced via data source)
+#------------------------------------------------------------------------------
+
+# Data source for existing App ALB
+data "aws_lb" "app" {
+  count = var.enable_app_servers ? 1 : 0
+  name  = "${local.name_prefix}-app-alb"
+}
+
+#------------------------------------------------------------------------------
+# Public ALB - Botpress
 #------------------------------------------------------------------------------
 
 # Botpress ALB
@@ -83,13 +96,13 @@ resource "aws_lb_target_group" "botpress" {
   health_check {
     enabled             = true
     healthy_threshold   = 2
+    unhealthy_threshold = 2
     interval            = 30
-    matcher             = "200"
-    path                = "/health"
+    matcher             = "200-499"
+    path                = "/"
     port                = "traffic-port"
     protocol            = "HTTP"
     timeout             = 5
-    unhealthy_threshold = 2
   }
 
   tags = {
@@ -138,13 +151,13 @@ resource "aws_lb_target_group" "api" {
   health_check {
     enabled             = true
     healthy_threshold   = 2
+    unhealthy_threshold = 2
     interval            = 30
     matcher             = "200-499"
-    path                = "/api/health"
-    port                = "traffic-port"
+    path                = "/"
+    port                = 80
     protocol            = "HTTP"
     timeout             = 5
-    unhealthy_threshold = 2
   }
 
   tags = {
@@ -197,22 +210,76 @@ resource "aws_security_group" "integration_nlb" {
   description = "Security group for Integration NLB - allows HTTP/HTTPS from internet"
   vpc_id      = var.vpc_id
 
-  # HTTP from anywhere
+  # HTTP from VPC (internal)
   ingress {
     from_port   = 80
     to_port     = 80
     protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"]
-    description = "HTTP from internet"
+    cidr_blocks = [var.vpc_cidr]
+    description = "HTTP from VPC (internal)"
   }
 
-  # HTTPS from anywhere
+  # HTTP from SIS Ministry
+  ingress {
+    from_port   = 80
+    to_port     = 80
+    protocol    = "tcp"
+    cidr_blocks = ["193.188.64.75/32"]
+    description = "HTTP from SIS Ministry"
+  }
+
+  # HTTP from Saied
+  ingress {
+    from_port   = 80
+    to_port     = 80
+    protocol    = "tcp"
+    cidr_blocks = ["156.199.85.73/32"]
+    description = "HTTP from Saied"
+  }
+
+  # HTTP from Slashtec
+  ingress {
+    from_port   = 80
+    to_port     = 80
+    protocol    = "tcp"
+    cidr_blocks = ["54.166.68.132/32"]
+    description = "HTTP from Slashtec"
+  }
+
+  # HTTPS from VPC (internal)
   ingress {
     from_port   = 443
     to_port     = 443
     protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"]
-    description = "HTTPS from internet"
+    cidr_blocks = [var.vpc_cidr]
+    description = "HTTPS from VPC (internal)"
+  }
+
+  # HTTPS from SIS Ministry
+  ingress {
+    from_port   = 443
+    to_port     = 443
+    protocol    = "tcp"
+    cidr_blocks = ["193.188.64.75/32"]
+    description = "HTTPS from SIS Ministry"
+  }
+
+  # HTTPS from Saied
+  ingress {
+    from_port   = 443
+    to_port     = 443
+    protocol    = "tcp"
+    cidr_blocks = ["156.199.85.73/32"]
+    description = "HTTPS from Saied"
+  }
+
+  # HTTPS from Slashtec
+  ingress {
+    from_port   = 443
+    to_port     = 443
+    protocol    = "tcp"
+    cidr_blocks = ["54.166.68.132/32"]
+    description = "HTTPS from Slashtec"
   }
 
   # Egress to targets
@@ -276,7 +343,7 @@ resource "aws_lb" "integration" {
 # Integration Target Group - HTTP (port 80)
 resource "aws_lb_target_group" "integration_http" {
   count    = var.enable_integration_nlb ? 1 : 0
-  name     = "${local.name_prefix}-int-http-tg"  # Shortened to meet 32 char limit
+  name     = "${local.name_prefix}-int-http-tg" # Shortened to meet 32 char limit
   port     = 80
   protocol = "TCP"
   vpc_id   = var.vpc_id
@@ -305,6 +372,43 @@ resource "aws_lb_listener" "integration_http" {
   default_action {
     type             = "forward"
     target_group_arn = aws_lb_target_group.integration_http[0].arn
+  }
+}
+
+# Integration Target Group - TLS termination at NLB, forward to instances on port 80
+resource "aws_lb_target_group" "integration_https" {
+  count    = var.enable_integration_nlb && var.integration_nlb_acm_certificate_arn != "" ? 1 : 0
+  name     = "${local.name_prefix}-int-https-tg"
+  port     = 80
+  protocol = "TCP"
+  vpc_id   = var.vpc_id
+
+  health_check {
+    enabled             = true
+    healthy_threshold   = 3
+    unhealthy_threshold = 3
+    interval            = 30
+    port                = "traffic-port"
+    protocol            = "TCP"
+  }
+
+  tags = {
+    Name = "${local.name_prefix}-int-https-tg"
+  }
+}
+
+# NLB Listener - HTTPS (port 443) with TLS termination
+resource "aws_lb_listener" "integration_https" {
+  count             = var.enable_integration_nlb && var.integration_nlb_acm_certificate_arn != "" ? 1 : 0
+  load_balancer_arn = aws_lb.integration[0].arn
+  port              = 443
+  protocol          = "TLS"
+  ssl_policy        = "ELBSecurityPolicy-TLS13-1-2-2021-06"
+  certificate_arn   = var.integration_nlb_acm_certificate_arn
+
+  default_action {
+    type             = "forward"
+    target_group_arn = aws_lb_target_group.integration_https[0].arn
   }
 }
 
@@ -493,6 +597,44 @@ resource "aws_launch_template" "app_server" {
       Write-Host "CloudWatch Agent not found; skipping configuration"
     }
 
+    # Configure IIS Sites - Stop Default Web Site, Start AjyalApp
+    Write-Host "Configuring IIS Sites..."
+    try {
+      Import-Module WebAdministration -ErrorAction Stop
+
+      # Wait for IIS to be ready
+      $maxRetries = 30
+      $retryCount = 0
+      while ($retryCount -lt $maxRetries) {
+        $sites = Get-Website -ErrorAction SilentlyContinue
+        if ($sites) { break }
+        Start-Sleep -Seconds 2
+        $retryCount++
+      }
+
+      # Stop Default Web Site if running
+      $defaultSite = Get-Website -Name "Default Web Site" -ErrorAction SilentlyContinue
+      if ($defaultSite -and $defaultSite.State -eq "Started") {
+        Stop-Website -Name "Default Web Site" -ErrorAction SilentlyContinue
+        Write-Host "Stopped Default Web Site"
+      }
+
+      # Start AjyalApp site if exists
+      $ajyalSite = Get-Website -Name "AjyalApp" -ErrorAction SilentlyContinue
+      if ($ajyalSite) {
+        if ($ajyalSite.State -ne "Started") {
+          Start-Website -Name "AjyalApp" -ErrorAction SilentlyContinue
+          Write-Host "Started AjyalApp site"
+        } else {
+          Write-Host "AjyalApp site already running"
+        }
+      } else {
+        Write-Host "AjyalApp site not found - will be created by CodeDeploy"
+      }
+    } catch {
+      Write-Host "IIS configuration skipped: $($_.Exception.Message)"
+    }
+
     Write-Host "CodeDeploy and CloudWatch agents installed and configured successfully"
     </powershell>
     EOF
@@ -531,7 +673,7 @@ resource "aws_launch_template" "api_server" {
   block_device_mappings {
     device_name = "/dev/sda1"
     ebs {
-      volume_size           = 150  # Match Golden AMI snapshot size
+      volume_size           = 150 # Match Golden AMI snapshot size
       volume_type           = "gp3"
       encrypted             = true
       kms_key_id            = var.kms_key_arn
@@ -710,6 +852,41 @@ resource "aws_launch_template" "api_server" {
     & "C:\Program Files\Amazon\AmazonCloudWatchAgent\amazon-cloudwatch-agent-ctl.ps1" -a fetch-config -m ec2 -c file:"C:\ProgramData\Amazon\AmazonCloudWatchAgent\amazon-cloudwatch-agent.json" -s
     %{endif}
 
+    # Configure IIS Sites - Stop Default Web Site, Start AjyalAPI
+    Write-Host "Configuring IIS Sites..."
+    try {
+      Import-Module WebAdministration -ErrorAction Stop
+      # Wait for IIS to be fully initialized
+      $maxRetries = 30
+      $retryCount = 0
+      while ($retryCount -lt $maxRetries) {
+        $sites = Get-Website -ErrorAction SilentlyContinue
+        if ($sites) { break }
+        Start-Sleep -Seconds 2
+        $retryCount++
+      }
+      # Stop Default Web Site if running
+      $defaultSite = Get-Website -Name "Default Web Site" -ErrorAction SilentlyContinue
+      if ($defaultSite -and $defaultSite.State -eq "Started") {
+        Stop-Website -Name "Default Web Site" -ErrorAction SilentlyContinue
+        Write-Host "Stopped Default Web Site"
+      }
+      # Start AjyalAPI site if exists and not running
+      $ajyalSite = Get-Website -Name "AjyalAPI" -ErrorAction SilentlyContinue
+      if ($ajyalSite) {
+        if ($ajyalSite.State -ne "Started") {
+          Start-Website -Name "AjyalAPI" -ErrorAction SilentlyContinue
+          Write-Host "Started AjyalAPI site"
+        } else {
+          Write-Host "AjyalAPI site is already running"
+        }
+      } else {
+        Write-Host "AjyalAPI site not found - will be created by CodeDeploy"
+      }
+    } catch {
+      Write-Host "IIS configuration skipped: $($_.Exception.Message)"
+    }
+
     Write-Host "Bootstrap complete for API Server"
     </powershell>
     EOF
@@ -746,12 +923,13 @@ resource "aws_launch_template" "integration_server" {
     name = var.instance_profile_name
   }
 
-  vpc_security_group_ids = [var.windows_security_group_id]
+  # Use dedicated integration SG (no MS SQL access) if provided
+  vpc_security_group_ids = [local.integration_sg_id]
 
   block_device_mappings {
     device_name = "/dev/sda1"
     ebs {
-      volume_size           = 150  # Match Golden AMI snapshot size
+      volume_size           = 150 # Match Golden AMI snapshot size
       volume_type           = "gp3"
       encrypted             = true
       kms_key_id            = var.kms_key_arn
@@ -929,6 +1107,44 @@ resource "aws_launch_template" "integration_server" {
     $cwConfig | Out-File -FilePath "C:\ProgramData\Amazon\AmazonCloudWatchAgent\amazon-cloudwatch-agent.json" -Encoding UTF8
     & "C:\Program Files\Amazon\AmazonCloudWatchAgent\amazon-cloudwatch-agent-ctl.ps1" -a fetch-config -m ec2 -c file:"C:\ProgramData\Amazon\AmazonCloudWatchAgent\amazon-cloudwatch-agent.json" -s
     %{endif}
+
+    # Configure IIS Sites - Stop Default Web Site, Start AjyalIntegration
+    Write-Host "Configuring IIS Sites..."
+    try {
+      Import-Module WebAdministration -ErrorAction Stop
+
+      # Wait for IIS to be ready
+      $maxRetries = 30
+      $retryCount = 0
+      while ($retryCount -lt $maxRetries) {
+        $sites = Get-Website -ErrorAction SilentlyContinue
+        if ($sites) { break }
+        Start-Sleep -Seconds 2
+        $retryCount++
+      }
+
+      # Stop Default Web Site if running
+      $defaultSite = Get-Website -Name "Default Web Site" -ErrorAction SilentlyContinue
+      if ($defaultSite -and $defaultSite.State -eq "Started") {
+        Stop-Website -Name "Default Web Site" -ErrorAction SilentlyContinue
+        Write-Host "Stopped Default Web Site"
+      }
+
+      # Start AjyalIntegration site if exists
+      $ajyalSite = Get-Website -Name "AjyalIntegration" -ErrorAction SilentlyContinue
+      if ($ajyalSite) {
+        if ($ajyalSite.State -ne "Started") {
+          Start-Website -Name "AjyalIntegration" -ErrorAction SilentlyContinue
+          Write-Host "Started AjyalIntegration site"
+        } else {
+          Write-Host "AjyalIntegration site already running"
+        }
+      } else {
+        Write-Host "AjyalIntegration site not found - will be created by CodeDeploy"
+      }
+    } catch {
+      Write-Host "IIS configuration skipped: $($_.Exception.Message)"
+    }
 
     Write-Host "Bootstrap complete for Integration Server"
     </powershell>
@@ -1799,10 +2015,11 @@ resource "aws_autoscaling_group" "integration" {
   desired_capacity    = var.integration_server_min_size
   vpc_zone_identifier = [var.private_app_subnet_id]
 
-  # Attach to NLB target group if NLB is enabled (port 80 only)
-  target_group_arns = var.enable_integration_nlb ? [
-    aws_lb_target_group.integration_http[0].arn
-  ] : []
+  # Attach to NLB target groups if NLB is enabled (HTTP and HTTPS)
+  target_group_arns = var.enable_integration_nlb ? concat(
+    [aws_lb_target_group.integration_http[0].arn],
+    var.integration_nlb_acm_certificate_arn != "" ? [aws_lb_target_group.integration_https[0].arn] : []
+  ) : []
 
   launch_template {
     id      = aws_launch_template.integration_server[0].id
@@ -2073,14 +2290,17 @@ resource "aws_autoscaling_group" "content" {
 #------------------------------------------------------------------------------
 
 resource "aws_cloudfront_distribution" "main" {
-  count   = var.enable_cloudfront && var.enable_botpress_servers ? 1 : 0
+  count   = var.enable_cloudfront && var.enable_app_servers ? 1 : 0
   enabled = true
-  comment = "${local.name_prefix} CloudFront Distribution (Botpress)"
+  comment = "${local.name_prefix} CloudFront Distribution"
 
-  # Botpress ALB as origin
+  # Custom domain aliases
+  aliases = length(var.cloudfront_domain_aliases) > 0 ? var.cloudfront_domain_aliases : null
+
+  # App ALB as primary origin (default)
   origin {
-    domain_name = aws_lb.botpress[0].dns_name
-    origin_id   = "botpress-alb"
+    domain_name = data.aws_lb.app[0].dns_name
+    origin_id   = "app-alb"
 
     custom_origin_config {
       http_port              = 80
@@ -2095,11 +2315,32 @@ resource "aws_cloudfront_distribution" "main" {
     }
   }
 
-  # Default behavior - Botpress ALB
+  # Botpress ALB as secondary origin (for /botpress/* paths)
+  dynamic "origin" {
+    for_each = var.enable_botpress_servers ? [1] : []
+    content {
+      domain_name = aws_lb.botpress[0].dns_name
+      origin_id   = "botpress-alb"
+
+      custom_origin_config {
+        http_port              = 80
+        https_port             = 443
+        origin_protocol_policy = "http-only"
+        origin_ssl_protocols   = ["TLSv1.2"]
+      }
+
+      custom_header {
+        name  = "X-CloudFront-Secret"
+        value = var.cloudfront_secret_header
+      }
+    }
+  }
+
+  # Default behavior - App ALB
   default_cache_behavior {
     allowed_methods  = ["DELETE", "GET", "HEAD", "OPTIONS", "PATCH", "POST", "PUT"]
     cached_methods   = ["GET", "HEAD"]
-    target_origin_id = "botpress-alb"
+    target_origin_id = "app-alb"
 
     forwarded_values {
       query_string = true
@@ -2117,28 +2358,32 @@ resource "aws_cloudfront_distribution" "main" {
     compress               = true
   }
 
-  # Botpress WebSocket support
-  ordered_cache_behavior {
-    path_pattern     = "/socket.io/*"
-    allowed_methods  = ["DELETE", "GET", "HEAD", "OPTIONS", "PATCH", "POST", "PUT"]
-    cached_methods   = ["GET", "HEAD"]
-    target_origin_id = "botpress-alb"
+  # Botpress paths -> Botpress ALB
+  dynamic "ordered_cache_behavior" {
+    for_each = var.enable_botpress_servers ? [1] : []
+    content {
+      path_pattern     = "/botpress/*"
+      allowed_methods  = ["DELETE", "GET", "HEAD", "OPTIONS", "PATCH", "POST", "PUT"]
+      cached_methods   = ["GET", "HEAD"]
+      target_origin_id = "botpress-alb"
 
-    forwarded_values {
-      query_string = true
-      headers      = ["*"]
+      forwarded_values {
+        query_string = true
+        headers      = ["Host", "Origin", "Authorization"]
 
-      cookies {
-        forward = "all"
+        cookies {
+          forward = "all"
+        }
       }
-    }
 
-    viewer_protocol_policy = "redirect-to-https"
-    min_ttl                = 0
-    default_ttl            = 0
-    max_ttl                = 0
-    compress               = false
+      viewer_protocol_policy = "redirect-to-https"
+      min_ttl                = 0
+      default_ttl            = 0
+      max_ttl                = 86400
+      compress               = true
+    }
   }
+
 
   price_class = var.cloudfront_price_class
 
@@ -2148,8 +2393,12 @@ resource "aws_cloudfront_distribution" "main" {
     }
   }
 
+  # Use ACM certificate if provided, otherwise use default CloudFront certificate
   viewer_certificate {
-    cloudfront_default_certificate = true
+    cloudfront_default_certificate = var.cloudfront_acm_certificate_arn == "" ? true : false
+    acm_certificate_arn            = var.cloudfront_acm_certificate_arn != "" ? var.cloudfront_acm_certificate_arn : null
+    ssl_support_method             = var.cloudfront_acm_certificate_arn != "" ? "sni-only" : null
+    minimum_protocol_version       = var.cloudfront_acm_certificate_arn != "" ? "TLSv1.2_2021" : null
   }
 
   # WAF integration (if enabled)

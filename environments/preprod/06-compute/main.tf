@@ -86,6 +86,7 @@ module "compute" {
 
   environment = var.environment
   vpc_id      = data.terraform_remote_state.vpc.outputs.vpc_id
+  vpc_cidr    = data.terraform_remote_state.vpc.outputs.vpc_cidr
 
   # Subnets
   public_subnet_id       = data.terraform_remote_state.vpc.outputs.public_subnet_id
@@ -95,9 +96,10 @@ module "compute" {
   private_app_subnet_ids = data.terraform_remote_state.vpc.outputs.private_app_subnet_ids
 
   # Security Groups
-  windows_security_group_id = data.terraform_remote_state.security.outputs.windows_server_security_group_id
-  linux_security_group_id   = data.terraform_remote_state.security.outputs.linux_server_security_group_id
-  alb_security_group_id     = data.terraform_remote_state.security.outputs.alb_security_group_id
+  windows_security_group_id     = data.terraform_remote_state.security.outputs.windows_server_security_group_id
+  linux_security_group_id       = data.terraform_remote_state.security.outputs.linux_server_security_group_id
+  alb_security_group_id         = data.terraform_remote_state.security.outputs.alb_security_group_id
+  integration_security_group_id = data.terraform_remote_state.security.outputs.integration_server_security_group_id
 
   # IAM
   instance_profile_name = data.terraform_remote_state.cicd.outputs.instance_profile_name
@@ -164,9 +166,14 @@ module "compute" {
   content_server_max_size      = var.content_server_max_size
 
   # CloudFront CDN
-  enable_cloudfront      = var.enable_cloudfront
-  cloudfront_price_class = var.cloudfront_price_class
-  waf_web_acl_arn        = "" # WAF is regional, CloudFront needs global WAF
+  enable_cloudfront              = var.enable_cloudfront
+  cloudfront_price_class         = var.cloudfront_price_class
+  cloudfront_domain_aliases      = var.cloudfront_domain_aliases
+  cloudfront_acm_certificate_arn = var.cloudfront_acm_certificate_arn
+  waf_web_acl_arn                = "" # WAF is regional, CloudFront needs global WAF
+
+  # Integration NLB TLS
+  integration_nlb_acm_certificate_arn = var.integration_nlb_acm_certificate_arn
 }
 
 #------------------------------------------------------------------------------

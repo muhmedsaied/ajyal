@@ -309,15 +309,15 @@ resource "aws_security_group" "windows_server" {
   }
 
   # Integration NLB traffic (when NLB is enabled for static IPs)
-  # NLBs pass through traffic directly, so targets need to allow public access
+  # Restricted to VPC internal and SIS Ministry IP only
   dynamic "ingress" {
     for_each = var.enable_integration_nlb ? [1] : []
     content {
       from_port   = 80
       to_port     = 80
       protocol    = "tcp"
-      cidr_blocks = ["0.0.0.0/0"]
-      description = "HTTP from Integration NLB (public)"
+      cidr_blocks = [var.vpc_cidr, "193.188.64.75/32"]
+      description = "HTTP from Integration NLB (VPC + SIS Ministry)"
     }
   }
 
@@ -327,8 +327,8 @@ resource "aws_security_group" "windows_server" {
       from_port   = 443
       to_port     = 443
       protocol    = "tcp"
-      cidr_blocks = ["0.0.0.0/0"]
-      description = "HTTPS from Integration NLB (public)"
+      cidr_blocks = [var.vpc_cidr, "193.188.64.75/32"]
+      description = "HTTPS from Integration NLB (VPC + SIS Ministry)"
     }
   }
 
@@ -440,6 +440,117 @@ resource "aws_security_group" "linux_server" {
   }
 }
 
+# Integration Server Security Group (separate from Windows SG to restrict DB access)
+resource "aws_security_group" "integration_server" {
+  name        = "${local.name_prefix}-integration-sg"
+  description = "Security group for Integration servers (no MS SQL access)"
+  vpc_id      = var.vpc_id
+
+  # HTTP from ALB
+  ingress {
+    from_port       = 80
+    to_port         = 80
+    protocol        = "tcp"
+    security_groups = [aws_security_group.alb.id]
+    description     = "HTTP from ALB"
+  }
+
+  # HTTPS from ALB
+  ingress {
+    from_port       = 443
+    to_port         = 443
+    protocol        = "tcp"
+    security_groups = [aws_security_group.alb.id]
+    description     = "HTTPS from ALB"
+  }
+
+  # Self communication
+  ingress {
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    self        = true
+    description = "Internal Integration server communication"
+  }
+
+  # From Linux servers
+  ingress {
+    from_port       = 443
+    to_port         = 443
+    protocol        = "tcp"
+    security_groups = [aws_security_group.linux_server.id]
+    description     = "HTTPS from Linux servers"
+  }
+
+  # Integration NLB traffic (when NLB is enabled for static IPs)
+  # Restricted to VPC internal, SIS Ministry, and Slashtec IPs
+  dynamic "ingress" {
+    for_each = var.enable_integration_nlb ? [1] : []
+    content {
+      from_port   = 80
+      to_port     = 80
+      protocol    = "tcp"
+      cidr_blocks = [var.vpc_cidr, "193.188.64.75/32", "156.199.85.73/32", "54.166.68.132/32"]
+      description = "HTTP from Integration NLB (VPC + SIS Ministry + Saied + Slashtec)"
+    }
+  }
+
+  dynamic "ingress" {
+    for_each = var.enable_integration_nlb ? [1] : []
+    content {
+      from_port   = 443
+      to_port     = 443
+      protocol    = "tcp"
+      cidr_blocks = [var.vpc_cidr, "193.188.64.75/32", "156.199.85.73/32", "54.166.68.132/32"]
+      description = "HTTPS from Integration NLB (VPC + SIS Ministry + Saied + Slashtec)"
+    }
+  }
+
+  # VPN access (optional)
+  dynamic "ingress" {
+    for_each = toset(var.vpn_access_cidr_blocks)
+    content {
+      from_port   = 0
+      to_port     = 0
+      protocol    = "-1"
+      cidr_blocks = [ingress.value]
+      description = "VPN access"
+    }
+  }
+
+  egress {
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  tags = {
+    Name = "${local.name_prefix}-integration-sg"
+  }
+}
+
+# Separate rules to avoid circular dependency between Windows SG and Integration SG
+resource "aws_security_group_rule" "windows_from_integration" {
+  type                     = "ingress"
+  from_port                = 0
+  to_port                  = 0
+  protocol                 = "-1"
+  source_security_group_id = aws_security_group.integration_server.id
+  security_group_id        = aws_security_group.windows_server.id
+  description              = "Internal communication from Integration servers"
+}
+
+resource "aws_security_group_rule" "integration_from_windows" {
+  type                     = "ingress"
+  from_port                = 0
+  to_port                  = 0
+  protocol                 = "-1"
+  source_security_group_id = aws_security_group.windows_server.id
+  security_group_id        = aws_security_group.integration_server.id
+  description              = "Internal communication from Windows servers"
+}
+
 # Database Security Group
 resource "aws_security_group" "database" {
   name        = "${local.name_prefix}-database-sg"
@@ -464,21 +575,21 @@ resource "aws_security_group" "database" {
     description     = "PostgreSQL from Linux servers"
   }
 
-  # Redis from all servers
+  # Redis from all servers (Windows, Linux, AND Integration)
   ingress {
     from_port       = 6379
     to_port         = 6379
     protocol        = "tcp"
-    security_groups = [aws_security_group.windows_server.id, aws_security_group.linux_server.id]
+    security_groups = [aws_security_group.windows_server.id, aws_security_group.linux_server.id, aws_security_group.integration_server.id]
     description     = "Redis"
   }
 
-  # OpenSearch from all servers
+  # OpenSearch from all servers (Windows, Linux, AND Integration)
   ingress {
     from_port       = 443
     to_port         = 443
     protocol        = "tcp"
-    security_groups = [aws_security_group.windows_server.id, aws_security_group.linux_server.id]
+    security_groups = [aws_security_group.windows_server.id, aws_security_group.linux_server.id, aws_security_group.integration_server.id]
     description     = "OpenSearch HTTPS"
   }
 
@@ -486,7 +597,7 @@ resource "aws_security_group" "database" {
     from_port       = 9200
     to_port         = 9200
     protocol        = "tcp"
-    security_groups = [aws_security_group.windows_server.id, aws_security_group.linux_server.id]
+    security_groups = [aws_security_group.windows_server.id, aws_security_group.linux_server.id, aws_security_group.integration_server.id]
     description     = "OpenSearch"
   }
 
